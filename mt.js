@@ -1,43 +1,7 @@
-let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
-    .map((el) => el.textContent)
-    .join("\n\n")
-
-const functions = {
-    'wait': (last, ms) => new Promise(resolve => setTimeout(resolve, ms, last)),
-    'fetch': url => fetch(url).then(res => res.json()),
-
-}
-
-let threadPrograms = text.split('\n\n')
-
-async function execute(code, input = null) {
-    if (!code) return input
-    let atIndex = code.search(/ @ /);
-    if (atIndex === -1) atIndex = code.length;
-    let thisStatement = code.slice(0, atIndex).trim();
-    let [func, ...args] = thisStatement.split(" ");
-    let f = functions[func];
-    if (!f) {
-        if (args.length)
-            throw `error: undefined function ${func}`;
-        else
-            return execute(code.slice(atIndex + 3), func);
-    }
-    return await f(input, ...args)
-      .then((v) => execute(code.slice(atIndex + 3), v))
-      .catch((e) => {
-        throw `error: ${e}`
-      });
-}
-
-for (const threadProgram of threadPrograms) {
-    execute(threadProgram).then(console.log).catch(console.error)
-}
-
 // code from:
 // https://blog.stevenlevithan.com/archives/javascript-match-nested
 // use as: matchRecursive('a(b)c(d(e)f)g', '(...)')
-// returns: ['b', 'd(e)f']
+// returns: [['b', 2, 3], ['d(e)f', 6, 11]]
 
 var matchRecursive = (function () {
   var formatParts = /^([\S\s]+?)\.\.\.([\S\s]+)/,
@@ -78,7 +42,11 @@ var matchRecursive = (function () {
         } else if (openTokens) {
           openTokens--;
           if (!openTokens)
-            results.push(str.slice(matchStartIndex, match.index));
+            results.push([
+              str.slice(matchStartIndex, match.index),
+              matchStartIndex,
+              match.index,
+            ]);
         }
       }
     } while (openTokens && (iterator.lastIndex = matchStartIndex));
@@ -86,3 +54,65 @@ var matchRecursive = (function () {
     return results;
   };
 })();
+
+
+
+let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
+  .map((el) => el.textContent)
+  .join("\n\n");
+
+const functions = {
+    wait: (last, ms) => new Promise((resolve) => setTimeout(resolve, ms, last)),
+    fetch: (url) => fetch(url).then((res) => res.json()),
+    add: (a, b) => Promise.resolve(a + b),
+    subtract: (a, b) => Promise.resolve(a - b),
+    multiply: (a, b) => Promise.resolve(a * b),
+    divide: (a, b) => Promise.resolve(a / b),
+};
+const shorthands = {
+    "+": "@ add",
+    "-": "@ subtract",
+    "*": "@ multiply",
+    "/": "@ divide",
+}
+function resolveShorthands(code) {
+    for (let [shorthand, command] of Object.entries(shorthands)) {
+        code = code.replace(new RegExp(` \\${shorthand} `, "g"), ` ${command} `);
+    }
+    return code;
+}
+
+let threadPrograms = text.split("\n\n");
+
+async function execute(code, input = null) {
+    if (!code) return input;
+
+    let parentheses = matchRecursive(code, "(...)");
+    for (const tuple of parentheses) {
+        let [str, start, end] = tuple;
+        code =
+        code.substring(0, start - 1) +
+        (await execute(str)) +
+        code.substring(end + 1);
+    }
+
+    let atIndex = code.search(/ @ /);
+    if (atIndex === -1) atIndex = code.length;
+    let thisStatement = code.slice(0, atIndex).trim();
+    let [func, ...args] = thisStatement.split(" ");
+    let f = functions[func];
+    if (!f) {
+        if (args.length) throw `error: undefined function ${func}`;
+        else return execute(code.slice(atIndex + 3), func);
+    }
+    return await f(input, ...args)
+        .then((v) => execute(code.slice(atIndex + 3), v))
+        .catch((e) => {
+        throw `error: ${e}`;
+        });
+}
+
+for (let threadProgram of threadPrograms) {
+    threadProgram = resolveShorthands(threadProgram)
+    execute(threadProgram).then(console.log).catch(console.error);
+}
