@@ -1,33 +1,18 @@
-// code from:
+// code modified from:
 // https://blog.stevenlevithan.com/archives/javascript-match-nested
 // use as: matchRecursive('a(b)c(d(e)f)g', '(...)')
 // returns: [['b', 2, 3], ['d(e)f', 6, 11]]
 
-var matchRecursive = (function () {
-  var formatParts = /^([\S\s]+?)\.\.\.([\S\s]+)/,
+let matchRecursive = (function () {
+  const formatParts = /^([\S\s]+?)\.\.\.([\S\s]+)/,
     metaChar = /[-[\]{}()*+?.\\^$|,]/g,
     escape = function (str) {
       return str.replace(metaChar, "\\$&");
     };
 
-  return function (str, format) {
-    var p = formatParts.exec(format);
-    if (!p)
-      throw new Error(
-        "format must include start and end tokens separated by '...'"
-      );
-    if (p[1] == p[2])
-      throw new Error("start and end format tokens cannot be identical");
-
-    var opener = p[1],
-      closer = p[2],
-      /* Use an optimized regex when opener and closer are one character each */
-      iterator = new RegExp(
-        format.length == 5
-          ? "[" + escape(opener + closer) + "]"
-          : escape(opener) + "|" + escape(closer),
-        "g"
-      ),
+  return function (str, opener, closer) {
+    let openRE = new RegExp(`[${escape(opener)}]`),
+      iterator = new RegExp(`[${escape(opener)}${escape(closer)}]`, "g"),
       results = [],
       openTokens,
       matchStartIndex,
@@ -36,7 +21,7 @@ var matchRecursive = (function () {
     do {
       openTokens = 0;
       while ((match = iterator.exec(str))) {
-        if (match[0] == opener) {
+        if (openRE.exec(match[0])) {
           if (!openTokens) matchStartIndex = iterator.lastIndex;
           openTokens++;
         } else if (openTokens) {
@@ -46,6 +31,7 @@ var matchRecursive = (function () {
               str.slice(matchStartIndex, match.index),
               matchStartIndex,
               match.index,
+              match[0],
             ]);
         }
       }
@@ -57,62 +43,73 @@ var matchRecursive = (function () {
 
 
 
-let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
-  .map((el) => el.textContent)
-  .join("\n\n");
+		let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
+		.map((el) => el.textContent)
+		.join("\n\n");
 
-const functions = {
-    wait: (last, ms) => new Promise((resolve) => setTimeout(resolve, ms, last)),
-    fetch: (url) => fetch(url).then((res) => res.json()),
-    add: (a, b) => Promise.resolve(a + b),
-    subtract: (a, b) => Promise.resolve(a - b),
-    multiply: (a, b) => Promise.resolve(a * b),
-    divide: (a, b) => Promise.resolve(a / b),
-};
-const shorthands = {
-    "+": "@ add",
-    "-": "@ subtract",
-    "*": "@ multiply",
-    "/": "@ divide",
-}
-function resolveShorthands(code) {
-    for (let [shorthand, command] of Object.entries(shorthands)) {
-        code = code.replace(new RegExp(` \\${shorthand} `, "g"), ` ${command} `);
-    }
-    return code;
-}
+		const functions = {
+			wait: (last, ms) => new Promise((resolve) => setTimeout(resolve, ms, last)),
+			fetch: (url) => fetch(url).then((res) => res.json()),
+			add: (a, b) => Promise.resolve(a + b),
+			subtract: (a, b) => Promise.resolve(a - b),
+			multiply: (a, b) => Promise.resolve(a * b),
+			divide: (a, b) => Promise.resolve(a / b),
+		};
+		const shorthands = {
+			"+": "@ add",
+			"-": "@ subtract",
+			"*": "@ multiply",
+			"/": "@ divide",
+		}
+		function resolveShorthands(code) {
+			for (let [shorthand, command] of Object.entries(shorthands)) {
+				code = code.replace(new RegExp(` \\${shorthand} `, "g"), ` ${command} `);
+			}
+			return code;
+		}
 
-let threadPrograms = text.split("\n\n");
+		let threadPrograms = text.split("\n\n");
 
-async function execute(code, input = null) {
-    if (!code) return input;
+		async function execute(code, input = null) {
+			if (!code) return input;
 
-    let parentheses = matchRecursive(code, "(...)");
-    for (const tuple of parentheses) {
-        let [str, start, end] = tuple;
-        code =
-        code.substring(0, start - 1) +
-        (await execute(str)) +
-        code.substring(end + 1);
-    }
+			let parentheses = matchRecursive(code, '(<', ')>');
+            let innerScopes = []
+            let strings = []
+			for (const tuple of parentheses) {
+				let [str, start, end, char] = tuple;
+                if (char === ')') {
+                    code =
+                        `${code.substring(0, start)}${innerScopes.length}${code.substring(end)};`
+                    innerScopes.push(await execute(str));
+                }
+                console.log(input);
+                console.log(code);
+                console.log(innerScopes);
+                console.log("");
+			}
 
-    let atIndex = code.search(/ @ /);
-    if (atIndex === -1) atIndex = code.length;
-    let thisStatement = code.slice(0, atIndex).trim();
-    let [func, ...args] = thisStatement.split(" ");
-    let f = functions[func];
-    if (!f) {
-        if (args.length) throw `error: undefined function ${func}`;
-        else return execute(code.slice(atIndex + 3), func);
-    }
-    return await f(input, ...args)
-        .then((v) => execute(code.slice(atIndex + 3), v))
-        .catch((e) => {
-        throw `error: ${e}`;
-        });
-}
+			let atIndex = code.search(/ @ /);
+			if (atIndex === -1) atIndex = code.length;
+			let thisStatement = code.slice(0, atIndex).trim();
+			let [func, ...args] = thisStatement.split(" ");
+			let f = functions[func];
+			if (!f) {
+				if (args.length) throw `error: undefined function ${func}`;
+				else return execute(code.slice(atIndex + 3), func);
+			}
+            for (const i in args) {
+                if (args[i].startsWith('('))
+                    args[i] = innerScopes[args[i][1]]
+            }
+			return await f(input, ...args)
+			.then((v) => execute(code.slice(atIndex + 3), v))
+			.catch((e) => {
+				throw `error: ${e}`;
+			});
+		}
 
-for (let threadProgram of threadPrograms) {
-    threadProgram = resolveShorthands(threadProgram)
-    execute(threadProgram).then(console.log).catch(console.error);
-}
+		for (let threadProgram of threadPrograms) {
+			threadProgram = resolveShorthands(threadProgram)
+			execute(threadProgram).then(console.log).catch(console.error);
+		}
