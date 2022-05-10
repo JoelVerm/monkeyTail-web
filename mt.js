@@ -51,7 +51,7 @@ function getType(val) {
   else if (val instanceof Date) return "date";
   else if (val instanceof RegExp) return "regex";
   else if (typeof val === "object") return "map";
-  else throw `type of ${val} is not implemented`;
+  else throw `type ${typeof val} of ${val} is not implemented`;
 }
 function typeConvert(val) {
   if (val === "true") return true;
