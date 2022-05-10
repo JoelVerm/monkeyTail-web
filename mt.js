@@ -4,112 +4,242 @@
 // returns: [['b', 2, 3], ['d(e)f', 6, 11]]
 
 let matchRecursive = (function () {
-  const formatParts = /^([\S\s]+?)\.\.\.([\S\s]+)/,
-    metaChar = /[-[\]{}()*+?.\\^$|,]/g,
-    escape = function (str) {
-      return str.replace(metaChar, "\\$&");
-    };
+	const formatParts = /^([\S\s]+?)\.\.\.([\S\s]+)/,
+	metaChar = /[-[\]{}()*+?.\\^$|,]/g,
+	escape = function (str) {
+		return str.replace(metaChar, "\\$&");
+	};
 
-  return function (str, opener, closer) {
-    let openRE = new RegExp(`[${escape(opener)}]`),
-      iterator = new RegExp(`[${escape(opener)}${escape(closer)}]`, "g"),
-      results = [],
-      openTokens,
-      matchStartIndex,
-      match;
+	return function (str, opener, closer) {
+		let openRE = new RegExp(`[${escape(opener)}]`),
+		iterator = new RegExp(`[${escape(opener)}${escape(closer)}]`, "g"),
+		results = [],
+		openTokens,
+		matchStartIndex,
+		match;
 
-    do {
-      openTokens = 0;
-      while ((match = iterator.exec(str))) {
-        if (openRE.exec(match[0])) {
-          if (!openTokens) matchStartIndex = iterator.lastIndex;
-          openTokens++;
-        } else if (openTokens) {
-          openTokens--;
-          if (!openTokens)
-            results.push([
-              str.slice(matchStartIndex, match.index),
-              matchStartIndex,
-              match.index,
-              match[0],
-            ]);
-        }
-      }
-    } while (openTokens && (iterator.lastIndex = matchStartIndex));
+		do {
+			openTokens = 0;
+			while ((match = iterator.exec(str))) {
+				if (openRE.exec(match[0])) {
+					if (!openTokens) matchStartIndex = iterator.lastIndex;
+					openTokens++;
+				} else if (openTokens) {
+					openTokens--;
+					if (!openTokens)
+					results.push([
+						str.slice(matchStartIndex, match.index),
+						matchStartIndex,
+						match.index,
+						match[0],
+					]);
+				}
+			}
+		} while (openTokens && (iterator.lastIndex = matchStartIndex));
 
-    return results;
-  };
+		return results;
+	};
 })();
 
 
 
-		let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
-		.map((el) => el.textContent)
-		.join("\n\n");
+let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
+.map((el) => el.textContent)
+.join("\n\n");
 
-		const functions = {
-			wait: (last, ms) => new Promise((resolve) => setTimeout(resolve, ms, last)),
-			fetch: (url) => fetch(url).then((res) => res.json()),
-			add: (a, b) => Promise.resolve(a + b),
-			subtract: (a, b) => Promise.resolve(a - b),
-			multiply: (a, b) => Promise.resolve(a * b),
-			divide: (a, b) => Promise.resolve(a / b),
-		};
-		const shorthands = {
-			"+": "@ add",
-			"-": "@ subtract",
-			"*": "@ multiply",
-			"/": "@ divide",
-		}
-		function resolveShorthands(code) {
-			for (let [shorthand, command] of Object.entries(shorthands)) {
-				code = code.replace(new RegExp(` \\${shorthand} `, "g"), ` ${command} `);
+const functions = {
+	wait: (last, ms) => new Promise((resolve) => setTimeout(resolve, ms, last)),
+	fetch: (url) => fetch(url).then((res) => res.json()),
+	add: async (a, b) => a + b,
+	subtract: async (a, b) => a - b,
+	multiply: async (a, b) => a * b,
+	divide: async (a, b) => a / b,
+	type: async (a) => typeof a,
+	length: async (a) => a.length,
+	print: async (a) => {console.log(a); return a},
+	convert: async (value, to) => {
+		try {
+			switch (to) {
+				case "number": return Number(value);
+				case "string": return String(value);
+				case "boolean": return Boolean(value);
+				case "list": return Array.isArray(value) ? value : [value];
+				case "map": return typeof value === "object" ? value : {value};
+				case "date": return new Date(value);
+				case "regex": return new RegExp(value);
+				default: throw `invalid conversion type: ${to}`;
 			}
-			return code;
+		} catch {
+			throw `can not convert ${value} to ${to}`;
 		}
+	},
+	variable: async (value, setType, getType, name, data) => {
+		if (!data.variables) data.variables = {};
+		if (setType) {
+			data.variables[name] = await functions.convert(value, setType);
+		}
+		if (!data.variables[name]) throw `undefined variable: ${name}`;
+		return await functions.convert(data.variables[name], getType);
+	},
+	list: async (...args) =>([...args.slice(0, -1)]),
+	map: async (...args) => {
+		if(args.length % 2 === 1)
+			return Object.fromEntries(args.slice(0, -1).reduce(function(result, value, index, array) {
+			if (index % 2 === 0)
+				result.push(array.slice(index, index + 2));
+			return result;
+		}, []))
+		else
+			throw 'last map key has no value'
+	}
+};
+const shorthands = {
+	"+": "@ add",
+	"-": "@ subtract",
+	"*": "@ multiply",
+	"/": "@ divide",
+	"$>N": "@ variable false number",
+	"$>S": "@ variable false string",
+	"$>B": "@ variable false boolean",
+	"$>L": "@ variable false list",
+	"$>M": "@ variable false map",
+	"$>D": "@ variable false date",
+	"$>R": "@ variable false regex",
+	"$NN": "@ variable number number",
+	"$NS": "@ variable number string",
+	"$NB": "@ variable number boolean",
+	"$NL": "@ variable number list",
+	"$NM": "@ variable number map",
+	"$ND": "@ variable number date",
+	"$NR": "@ variable number regex",
+	"$SN": "@ variable string number",
+	"$SS": "@ variable string string",
+	"$SB": "@ variable string boolean",
+	"$SL": "@ variable string list",
+	"$SM": "@ variable string map",
+	"$SD": "@ variable string date",
+	"$SR": "@ variable string regex",
+	"$BN": "@ variable boolean number",
+	"$BS": "@ variable boolean string",
+	"$BB": "@ variable boolean boolean",
+	"$BL": "@ variable boolean list",
+	"$BM": "@ variable boolean map",
+	"$BD": "@ variable boolean date",
+	"$BR": "@ variable boolean regex",
+	"$LN": "@ variable list number",
+	"$LS": "@ variable list string",
+	"$LB": "@ variable list boolean",
+	"$LL": "@ variable list list",
+	"$LM": "@ variable list map",
+	"$LD": "@ variable list date",
+	"$LR": "@ variable list regex",
+	"$MN": "@ variable map number",
+	"$MS": "@ variable map string",
+	"$MB": "@ variable map boolean",
+	"$ML": "@ variable map list",
+	"$MM": "@ variable map map",
+	"$MD": "@ variable map date",
+	"$MR": "@ variable map regex",
+	"$DN": "@ variable date number",
+	"$DS": "@ variable date string",
+	"$DB": "@ variable date boolean",
+	"$DL": "@ variable date list",
+	"$DM": "@ variable date map",
+	"$DD": "@ variable date date",
+	"$DR": "@ variable date regex",
+	"$RN": "@ variable regex number",
+	"$RS": "@ variable regex string",
+	"$RB": "@ variable regex boolean",
+	"$RL": "@ variable regex list",
+	"$RM": "@ variable regex map",
+	"$RD": "@ variable regex date",
+	"$RR": "@ variable regex regex",
+	">N": "@ convert number",
+	">S": "@ convert string",
+	">B": "@ convert boolean",
+	">L": "@ convert list",
+	">M": "@ convert map",
+	">D": "@ convert date",
+	">R": "@ convert regex",
+}
+function resolveShorthands(code) {
+	for (let [shorthand, command] of Object.entries(shorthands)) {
+		code = code.replace(new RegExp(` \\${shorthand} `, "g"), ` ${command} `);
+	}
+	return code;
+}
 
-		let threadPrograms = text.split("\n\n");
+function typeConvert(val) {
+	if (val === 'true') return true
+	if (val === 'false') return false
+	if (!isNaN(Number(val))) return Number(val);
+	return val
+}
 
-		async function execute(code, input = null) {
-			if (!code) return input;
+let threadPrograms = text.split("\n\n");
 
-			let parentheses = matchRecursive(code, '(<', ')>');
-            let innerScopes = []
-            let strings = []
-			for (const tuple of parentheses) {
-				let [str, start, end, char] = tuple;
-                if (char === ')') {
-                    code =
-                        `${code.substring(0, start)}${innerScopes.length}${code.substring(end)};`
-                    innerScopes.push(await execute(str));
-                }
-                console.log(input);
-                console.log(code);
-                console.log(innerScopes);
-                console.log("");
+async function execute(code, input = null, data = null) {
+	if (!code) return input;
+
+	if (!data) {
+		let parentheses = matchRecursive(code, "(<", ")>");
+		let replaceOffset = 0;
+		let innerScopes = [];
+		let strings = [];
+		for (const tuple of parentheses) {
+			let [str, start, end, char] = tuple;
+			if (char === ")") {
+				code = `${code.substring(0, start + replaceOffset)}${
+					innerScopes.length
+				}${code.substring(end + replaceOffset)}`;
+				innerScopes.push(await execute(str));
+				replaceOffset -= str.length - innerScopes.length.toString().length;
 			}
-
-			let atIndex = code.search(/ @ /);
-			if (atIndex === -1) atIndex = code.length;
-			let thisStatement = code.slice(0, atIndex).trim();
-			let [func, ...args] = thisStatement.split(" ");
-			let f = functions[func];
-			if (!f) {
-				if (args.length) throw `error: undefined function ${func}`;
-				else return execute(code.slice(atIndex + 3), func);
+			if (char === ">") {
+				code = `${code.substring(0, start + replaceOffset)}${
+					strings.length
+				}${code.substring(end + replaceOffset)}`;
+				strings.push(str);
+				replaceOffset -= str.length - strings.length.toString().length;
 			}
-            for (const i in args) {
-                if (args[i].startsWith('('))
-                    args[i] = innerScopes[args[i][1]]
-            }
-			return await f(input, ...args)
-			.then((v) => execute(code.slice(atIndex + 3), v))
-			.catch((e) => {
-				throw `error: ${e}`;
-			});
 		}
+		data = { innerScopes: innerScopes, strings: strings };
+	}
+	let innerScopes = data.innerScopes,
+	strings = data.strings
 
-		for (let threadProgram of threadPrograms) {
-			threadProgram = resolveShorthands(threadProgram)
-			execute(threadProgram).then(console.log).catch(console.error);
-		}
+	let atIndex = code.search(/ @ /);
+	if (atIndex === -1) atIndex = code.length;
+	let thisStatement = code.slice(0, atIndex).trim();
+	let [func, ...args] = thisStatement.split(" ");
+	if (typeof func === "string") {
+		if (func.startsWith("(")) func = innerScopes[func.slice(1, -1)];
+		else if (func.startsWith("<")) func = strings[func.slice(1, -1)];
+	}
+	try {
+		func = typeConvert(func);
+	} catch {}
+	let f = functions[func];
+	if (!f) {
+		if (args.length) throw `error: undefined function ${func}`;
+		else return execute(code.slice(atIndex + 3), func, data);
+	}
+	for (const i in args) {
+		if (typeof args[i] === "string") {
+			if (args[i].startsWith("(")) args[i] = innerScopes[args[i].slice(1, -1)];
+			else if (args[i].startsWith("<")) args[i] = strings[args[i].slice(1, -1)];
+    	}
+		args[i] = typeConvert(args[i]);
+	}
+	if (input === null)
+		return f(...args, data)
+		.then((v) => execute(code.slice(atIndex + 3), v, data))
+	else
+		return f(input, ...args, data)
+		.then((v) => execute(code.slice(atIndex + 3), v, data))
+}
+
+for (let threadProgram of threadPrograms) {
+	threadProgram = resolveShorthands(threadProgram)
+	execute(threadProgram).then(console.log).catch(e => console.error(`error: ${e}`));
+}
