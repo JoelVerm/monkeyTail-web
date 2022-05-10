@@ -1,4 +1,4 @@
-// code modified from:
+// function modified from:
 // https://blog.stevenlevithan.com/archives/javascript-match-nested
 // use as: matchRecursive('a(b)c(d(e)f)g', '(...)')
 // returns: [['b', 2, 3], ['d(e)f', 6, 11]]
@@ -43,21 +43,57 @@ let matchRecursive = (function () {
 
 
 
+function getType(val) {
+  if (typeof val === "string") return "string";
+  else if (typeof val === "number") return "number";
+  else if (typeof val === "boolean") return "boolean";
+  else if (Array.isArray(val)) return "list";
+  else if (val instanceof Date) return "date";
+  else if (val instanceof RegExp) return "regex";
+  else if (typeof val === "object") return "map";
+  else throw `type of ${val} is not implemented`;
+}
+function typeConvert(val) {
+  if (val === "true") return true;
+  if (val === "false") return false;
+  if (!Number.isNaN(Number(val))) return Number(val);
+  return val;
+}
+
 let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
 .map((el) => el.textContent)
 .join("\n\n");
 
+function c (fn, name, ...argTypes) {
+	return (...args) => {
+		if (typeof argTypes[0] === 'number') {
+			if ((args.length - 1) % argTypes[0] !== 0) {
+				throw `${name} expects argument pairs of ${argTypes[0]} arguments`
+			}
+		} else {
+			if (args.length !== argTypes.length + 1) {
+				throw `${name} expects ${argTypes.length} arguments, got ${args.length}`
+			}
+			for (let i = 0; i < args.length - 1; i++) {
+				if (argTypes[i] !== 'any' && getType(args[i]) !== argTypes[i]) {
+					throw `${name} expects argument ${i} to be of type ${argTypes[i]}, got ${getType(args[i])}`
+				}
+			}
+		}
+		return fn(...args);
+	}
+}
 const functions = {
-	wait: (last, ms) => new Promise((resolve) => setTimeout(resolve, ms, last)),
-	fetch: (url) => fetch(url).then((res) => res.json()),
-	add: async (a, b) => a + b,
-	subtract: async (a, b) => a - b,
-	multiply: async (a, b) => a * b,
-	divide: async (a, b) => a / b,
-	type: async (a) => typeof a,
-	length: async (a) => a.length,
-	print: async (a) => {console.log(a); return a},
-	convert: async (value, to) => {
+	wait: c((last, ms) => new Promise((resolve) => setTimeout(resolve, ms, last)),'wait', 'any', 'number'),
+	fetch: c((url) => fetch(url).then((res) => res.json()), 'fetch', 'string'),
+	add: c(async (a, b) => a + b, 'add', 'any', 'any'),
+	subtract: c(async (a, b) => a - b, 'subtract', 'any', 'any'),
+	multiply: c(async (a, b) => a * b, 'multiply', 'any', 'any'),
+	divide: c(async (a, b) => a / b, 'divide', 'any', 'any'),
+	type: c(async (a) => getType(a), 'type', 'any'),
+	length: c(async (a) => a.length, 'length', 'any'),
+	print: c(async (a) => {console.log(a); return a}, 'print', 'any'),
+	convert: c(async (value, to) => {
 		try {
 			switch (to) {
 				case "number": return Number(value);
@@ -72,17 +108,17 @@ const functions = {
 		} catch {
 			throw `can not convert ${value} to ${to}`;
 		}
-	},
-	variable: async (value, setType, getType, name, data) => {
+	}, 'convert', 'any', 'string'),
+	variable: c(async (value, setType, getType, name, data) => {
 		if (!data.variables) data.variables = {};
 		if (setType) {
-			data.variables[name] = await functions.convert(value, setType);
+			data.variables[name] = await functions.convert(value, setType, data);
 		}
 		if (!data.variables[name]) throw `undefined variable: ${name}`;
-		return await functions.convert(data.variables[name], getType);
-	},
-	list: async (...args) =>([...args.slice(0, -1)]),
-	map: async (...args) => {
+		return await functions.convert(data.variables[name], getType, data);
+	}, 'variable', 'any', 'string', 'string', 'string'),
+	list: c(async (...args) =>([...args.slice(0, -1)]), 'list', 1),
+	map: c(async (...args) => {
 		if(args.length % 2 === 1)
 			return Object.fromEntries(args.slice(0, -1).reduce(function(result, value, index, array) {
 			if (index % 2 === 0)
@@ -91,7 +127,7 @@ const functions = {
 		}, []))
 		else
 			throw 'last map key has no value'
-	}
+	}, 'map', 2),
 };
 const shorthands = {
 	"+": "@ add",
@@ -167,13 +203,6 @@ function resolveShorthands(code) {
 		code = code.replace(new RegExp(` \\${shorthand} `, "g"), ` ${command} `);
 	}
 	return code;
-}
-
-function typeConvert(val) {
-	if (val === 'true') return true
-	if (val === 'false') return false
-	if (!isNaN(Number(val))) return Number(val);
-	return val
 }
 
 let threadPrograms = text.split("\n\n");
