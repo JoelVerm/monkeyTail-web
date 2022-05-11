@@ -144,8 +144,6 @@ const functions = {
 						return new Date(value)
 					case 'regex':
 						return new RegExp(value)
-					case 'block':
-						return codeBlock(value, {})
 					default:
 						throw `invalid conversion type: ${to}`
 				}
@@ -160,7 +158,9 @@ const functions = {
 	variable: c(
 		async (value, setType, getType, name, data) => {
 			if (!data.variables) data.variables = {}
-			if (setType !== 'none') {
+			if (setType === 'block')
+				data.variables[name] = value
+			else if (setType !== 'none') {
 				data.variables[name] = await functions.convert(
 					value,
 					setType,
@@ -168,6 +168,7 @@ const functions = {
 				)
 			}
 			if (!data.variables[name]) throw `undefined variable: ${name}`
+			if (getType === 'block') return data.variables[name]
 			return await functions.convert(data.variables[name], getType, data)
 		},
 		'variable',
@@ -233,7 +234,7 @@ const shorthands = {
 	'$>M': '@ variable none map',
 	'$>D': '@ variable none date',
 	'$>R': '@ variable none regex',
-	'$>C': '@ variable none block',
+	'$>-': '@ variable none block',
 	$NN: '@ variable number number',
 	$NS: '@ variable number string',
 	$NB: '@ variable number boolean',
@@ -241,7 +242,6 @@ const shorthands = {
 	$NM: '@ variable number map',
 	$ND: '@ variable number date',
 	$NR: '@ variable number regex',
-	$NC: '@ variable number block',
 	$SN: '@ variable string number',
 	$SS: '@ variable string string',
 	$SB: '@ variable string boolean',
@@ -249,7 +249,6 @@ const shorthands = {
 	$SM: '@ variable string map',
 	$SD: '@ variable string date',
 	$SR: '@ variable string regex',
-	$SC: '@ variable string block',
 	$BN: '@ variable boolean number',
 	$BS: '@ variable boolean string',
 	$BB: '@ variable boolean boolean',
@@ -257,7 +256,6 @@ const shorthands = {
 	$BM: '@ variable boolean map',
 	$BD: '@ variable boolean date',
 	$BR: '@ variable boolean regex',
-	$BC: '@ variable boolean block',
 	$LN: '@ variable list number',
 	$LS: '@ variable list string',
 	$LB: '@ variable list boolean',
@@ -265,7 +263,6 @@ const shorthands = {
 	$LM: '@ variable list map',
 	$LD: '@ variable list date',
 	$LR: '@ variable list regex',
-	$LC: '@ variable list block',
 	$MN: '@ variable map number',
 	$MS: '@ variable map string',
 	$MB: '@ variable map boolean',
@@ -273,7 +270,6 @@ const shorthands = {
 	$MM: '@ variable map map',
 	$MD: '@ variable map date',
 	$MR: '@ variable map regex',
-	$MC: '@ variable map block',
 	$DN: '@ variable date number',
 	$DS: '@ variable date string',
 	$DB: '@ variable date boolean',
@@ -281,7 +277,6 @@ const shorthands = {
 	$DM: '@ variable date map',
 	$DD: '@ variable date date',
 	$DR: '@ variable date regex',
-	$DC: '@ variable date block',
 	$RN: '@ variable regex number',
 	$RS: '@ variable regex string',
 	$RB: '@ variable regex boolean',
@@ -289,15 +284,7 @@ const shorthands = {
 	$RM: '@ variable regex map',
 	$RD: '@ variable regex date',
 	$RR: '@ variable regex regex',
-	$RC: '@ variable regex block',
-	$CN: '@ variable block number',
-	$CS: '@ variable block string',
-	$CB: '@ variable block boolean',
-	$CL: '@ variable block list',
-	$CM: '@ variable block map',
-	$CD: '@ variable block date',
-	$CR: '@ variable block regex',
-	$CC: '@ variable block block',
+	'$->': '@ variable block block',
 	'>N': '@ convert number',
 	'>S': '@ convert string',
 	'>B': '@ convert boolean',
@@ -305,7 +292,6 @@ const shorthands = {
 	'>M': '@ convert map',
 	'>D': '@ convert date',
 	'>R': '@ convert regex',
-	'>C': '@ convert block',
 	'#': '@ getIndex',
 	'->': '@ execute'
 }
