@@ -200,7 +200,7 @@ const functions = {
 		'any',
 		'any'
 	),
-	execute: c(async (block, input) => block(input), 'execute', 'block', 'any')
+	execute: c(async (block, ...input) => block(...input), 'execute', 1)
 }
 const shorthands = {
 	'+': '@ add',
