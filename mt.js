@@ -160,8 +160,7 @@ const functions = {
 	variable: c(
 		async (value, set, name, data) => {
 			if (!data.variables) data.variables = {}
-			if (set)
-				data.variables[name] = value
+			if (set) data.variables[name] = value
 			if (!data.variables[name]) throw `undefined variable: ${name}`
 			return data.variables[name]
 		},
@@ -360,13 +359,17 @@ async function execute(code, input = null, data = null) {
 		args[i] = typeConvert(args[i])
 	}
 	if (input === null)
-		return f(...args, data).then(v =>
-			execute(code.slice(atIndex + 3), v, data)
-		)
+		return f(...args, data)
+			.then(v => execute(code.slice(atIndex + 3), v, data))
+			.catch(e => {
+				throw e + '\nat:\t' + code.trim()
+			})
 	else
-		return f(input, ...args, data).then(v =>
-			execute(code.slice(atIndex + 3), v, data)
-		)
+		return f(input, ...args, data)
+			.then(v => execute(code.slice(atIndex + 3), v, data))
+			.catch(e => {
+				throw e + '\nat:\t' + code.trim()
+			})
 }
 
 let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
@@ -375,5 +378,7 @@ let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
 let threadPrograms = text.split('\n\n')
 for (let threadProgram of threadPrograms) {
 	threadProgram = resolveShorthands(threadProgram)
-	execute(threadProgram).then(console.log) //.catch(e => console.error(`error: ${e}`));
+	execute(threadProgram)
+		.then(console.log)
+		.catch(e => console.error(`error: ${e}`))
 }
