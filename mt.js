@@ -47,6 +47,8 @@ function getType(val) {
 function typeConvert(val) {
 	if (val === 'true') return true
 	if (val === 'false') return false
+	if (val === 'null') return null
+	if (val.trim() === '') return val
 	if (!Number.isNaN(Number(val))) return Number(val)
 	return val
 }
@@ -156,25 +158,16 @@ const functions = {
 		'string'
 	),
 	variable: c(
-		async (value, setType, getType, name, data) => {
+		async (value, set, name, data) => {
 			if (!data.variables) data.variables = {}
-			if (setType === 'block')
+			if (set)
 				data.variables[name] = value
-			else if (setType !== 'none') {
-				data.variables[name] = await functions.convert(
-					value,
-					setType,
-					data
-				)
-			}
 			if (!data.variables[name]) throw `undefined variable: ${name}`
-			if (getType === 'block') return data.variables[name]
-			return await functions.convert(data.variables[name], getType, data)
+			return data.variables[name]
 		},
 		'variable',
 		'any',
-		'string',
-		'string',
+		'boolean',
 		'string'
 	),
 	list: c(async (...args) => [...args.slice(0, -1)], 'list', 1),
@@ -227,64 +220,8 @@ const shorthands = {
 	'|': '@ or',
 	'!': '@ not',
 	'?': '@ if',
-	'$>N': '@ variable none number',
-	'$>S': '@ variable none string',
-	'$>B': '@ variable none boolean',
-	'$>L': '@ variable none list',
-	'$>M': '@ variable none map',
-	'$>D': '@ variable none date',
-	'$>R': '@ variable none regex',
-	'$>-': '@ variable none block',
-	$NN: '@ variable number number',
-	$NS: '@ variable number string',
-	$NB: '@ variable number boolean',
-	$NL: '@ variable number list',
-	$NM: '@ variable number map',
-	$ND: '@ variable number date',
-	$NR: '@ variable number regex',
-	$SN: '@ variable string number',
-	$SS: '@ variable string string',
-	$SB: '@ variable string boolean',
-	$SL: '@ variable string list',
-	$SM: '@ variable string map',
-	$SD: '@ variable string date',
-	$SR: '@ variable string regex',
-	$BN: '@ variable boolean number',
-	$BS: '@ variable boolean string',
-	$BB: '@ variable boolean boolean',
-	$BL: '@ variable boolean list',
-	$BM: '@ variable boolean map',
-	$BD: '@ variable boolean date',
-	$BR: '@ variable boolean regex',
-	$LN: '@ variable list number',
-	$LS: '@ variable list string',
-	$LB: '@ variable list boolean',
-	$LL: '@ variable list list',
-	$LM: '@ variable list map',
-	$LD: '@ variable list date',
-	$LR: '@ variable list regex',
-	$MN: '@ variable map number',
-	$MS: '@ variable map string',
-	$MB: '@ variable map boolean',
-	$ML: '@ variable map list',
-	$MM: '@ variable map map',
-	$MD: '@ variable map date',
-	$MR: '@ variable map regex',
-	$DN: '@ variable date number',
-	$DS: '@ variable date string',
-	$DB: '@ variable date boolean',
-	$DL: '@ variable date list',
-	$DM: '@ variable date map',
-	$DD: '@ variable date date',
-	$DR: '@ variable date regex',
-	$RN: '@ variable regex number',
-	$RS: '@ variable regex string',
-	$RB: '@ variable regex boolean',
-	$RL: '@ variable regex list',
-	$RM: '@ variable regex map',
-	$RD: '@ variable regex date',
-	$RR: '@ variable regex regex',
-	'$->': '@ variable block block',
+	'<$>': '@ variable true',
+	'$>': '@ variable false',
 	'>N': '@ convert number',
 	'>S': '@ convert string',
 	'>B': '@ convert boolean',
@@ -307,11 +244,6 @@ function resolveShorthands(code) {
 	}
 	return code
 }
-
-let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
-	.map(el => el.textContent)
-	.join('\n\n')
-let threadPrograms = text.split('\n\n')
 
 async function execute(code, input = null, data = null) {
 	if (!code) return input
@@ -437,6 +369,10 @@ async function execute(code, input = null, data = null) {
 		)
 }
 
+let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
+	.map(el => el.textContent)
+	.join('\n\n')
+let threadPrograms = text.split('\n\n')
 for (let threadProgram of threadPrograms) {
 	threadProgram = resolveShorthands(threadProgram)
 	execute(threadProgram).then(console.log) //.catch(e => console.error(`error: ${e}`));
