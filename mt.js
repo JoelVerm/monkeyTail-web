@@ -48,23 +48,24 @@ function typeConvert(val) {
 	if (val === 'true') return true
 	if (val === 'false') return false
 	if (val === 'null') return null
-	if (val.trim() === '') return val
+	if (val.trim && val.trim() === '') return val
 	if (!Number.isNaN(Number(val))) return Number(val)
 	return val
 }
 const varsFromNames = (names, vars) =>
-	Object.fromEntries(names.map(v => [v, vars[v]]))
+	Object.fromEntries(names.map(v => [(v.split(':')[1] || v), vars[(v.split(':')[0] || v)]]))
 const getBlockVars = (data, num) =>
 	varsFromNames(data.codeBlocksVars[num] || [], data.variables)
 const getScopeVars = (data, num) =>
-	data.innerScopesVars[num]
+	data.innerScopesVars[num] !== undefined
 		? varsFromNames(data.innerScopesVars[num], data.variables)
 		: { ...data.variables }
 
-const codeBlock =
-	(code, vars) =>
-	async (i = null) =>
-		execute(code, i, { variables: vars })
+const codeBlock = (code, vars) => {
+	let f = async (i = null) =>
+		execute(code, i, { variables: { ...vars, this: f } })
+	return f
+}
 
 function c(fn, name, ...argTypes) {
 	return (...args) => {
@@ -76,7 +77,7 @@ function c(fn, name, ...argTypes) {
 			if (args.length !== argTypes.length + 1) {
 				throw `${name} expects ${argTypes.length} arguments, got ${
 					args.length - 1
-				}: [ ${args.join(', ')} ]`
+				}: [ ${args.slice(0, -1).join(', ')} ]`
 			}
 			for (let i = 0; i < args.length - 1; i++) {
 				if (argTypes[i] !== 'any' && getType(args[i]) !== argTypes[i]) {
@@ -199,6 +200,7 @@ const functions = {
 		'any',
 		'any'
 	),
+	slice: c(async (a, start, end) => a.slice(start, end), 'slice', 'any', 'any', 'any'),
 	execute: c(async (block, ...input) => block(...input), 'execute', 1)
 }
 const shorthands = {
@@ -220,7 +222,7 @@ const shorthands = {
 	'!': '@ not',
 	'?': '@ if',
 	'<$>': '@ variable true',
-	'$>': '@ variable false',
+	'$>': '; variable null false',
 	'>N': '@ convert number',
 	'>S': '@ convert string',
 	'>B': '@ convert boolean',
@@ -229,6 +231,7 @@ const shorthands = {
 	'>D': '@ convert date',
 	'>R': '@ convert regex',
 	'#': '@ getIndex',
+	'##': '@ slice',
 	'->': '@ execute'
 }
 for (const key in shorthands) {
@@ -239,7 +242,10 @@ for (const key in shorthands) {
 }
 function resolveShorthands(code) {
 	for (let [shorthand, command] of Object.entries(shorthands)) {
-		code = code.replace(new RegExp(` ${shorthand} `, 'g'), ` ${command} `)
+		code = code.replace(
+			new RegExp(`\\s${shorthand}\\s`, 'g'),
+			` ${command} `
+		)
 	}
 	return code
 }
@@ -310,9 +316,8 @@ async function execute(code, input = null, data = null) {
 		}
 	}
 
-	let atIndex = code.search(/ [@;] /)
+	let atIndex = code.search(/\s[@;]\s/)
 	if (atIndex === -1) atIndex = code.length
-	if (code[atIndex] === ';') input = null
 	let thisStatement = code.slice(0, atIndex).trim()
 	let [func, ...args] = thisStatement.split(/\s+/)
 	try {
@@ -336,7 +341,10 @@ async function execute(code, input = null, data = null) {
 	let f = functions[func]
 	if (!f) {
 		if (args.length) throw `error: undefined function ${func}`
-		else return execute(code.slice(atIndex + 3), func, data)
+		else if (code[atIndex + 1] === ';') return execute(code.slice(atIndex + 2), null, data)
+		else if (func.trim && func.trim() === '')
+			return execute(code.slice(atIndex + 2), input, data)
+		else return execute(code.slice(atIndex + 2), func, data)
 	}
 	for (const i in args) {
 		if (typeof args[i] === 'string') {
@@ -358,15 +366,19 @@ async function execute(code, input = null, data = null) {
 		}
 		args[i] = typeConvert(args[i])
 	}
+	let cbf
+	if (code[atIndex + 1] === ';')
+		cbf = v => execute(code.slice(atIndex + 2), null, data)
+	else cbf = v => execute(code.slice(atIndex + 2), v, data)
 	if (input === null)
 		return f(...args, data)
-			.then(v => execute(code.slice(atIndex + 3), v, data))
+			.then(cbf)
 			.catch(e => {
 				throw e + '\nat:\t' + code.trim()
 			})
 	else
 		return f(input, ...args, data)
-			.then(v => execute(code.slice(atIndex + 3), v, data))
+			.then(cbf)
 			.catch(e => {
 				throw e + '\nat:\t' + code.trim()
 			})

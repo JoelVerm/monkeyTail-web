@@ -8,7 +8,12 @@
 	</head>
 	<body>
 		<script type="text/mt">
-			{ print * 5 } <$> ptf ; lol $> ptf -> 3
+			{
+				<$> num < 8 ?
+					[ num this:f ]{ $> f -> ( $> num + 2 ) }
+					[num]{ $> num }
+			} <$> ptf ;
+			$> ptf -> 3
 		</script>
 	</body>
 </html>
