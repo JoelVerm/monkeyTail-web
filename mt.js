@@ -122,6 +122,7 @@ const functions = {
 	or: c(async (a, b) => a || b, 'or', 'any', 'any'),
 	not: c(async a => !a, 'not', 'any'),
 	if: c(async (a, b, c) => (a ? b() : c()), 'if', 'any', 'block', 'block'),
+	while: c(async (a, b) => {while (a) a = b(a)}, 'while', 'any', 'block'),
 	type: c(async a => getType(a), 'type', 'any'),
 	length: c(async a => a.length, 'length', 'any'),
 	print: c(
@@ -228,6 +229,7 @@ const shorthands = {
 	'|': '@ or',
 	'!': '@ not',
 	'?': '@ if',
+	'?=': '@ while',
 	'<$>': '@ variable true',
 	'$>': '; variable null false',
 	'>N': '@ convert number',
