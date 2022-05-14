@@ -14,6 +14,9 @@
 					[num]{ $> num }
 			} <$> ptf ;
 			$> ptf -> 3
+
+			3 ?= { < 8 }
+				{ + 2 }
 		</script>
 	</body>
 </html>
