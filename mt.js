@@ -74,13 +74,16 @@ function c(fn, name, ...argTypes) {
 				throw `${name} expects argument pairs of ${argTypes[0]} arguments`
 			}
 		} else {
-			if (args.length !== argTypes.length + 1) {
+			if (!(args.length -1 <= argTypes.length && args.length - 1 >= argTypes.filter(a => !a.startsWith('?')).length)) {
 				throw `${name} expects ${argTypes.length} arguments, got ${
 					args.length - 1
 				}: [ ${args.slice(0, -1).join(', ')} ]`
 			}
 			for (let i = 0; i < args.length - 1; i++) {
-				if (argTypes[i] !== 'any' && getType(args[i]) !== argTypes[i]) {
+				if (
+					argTypes[i].replace('?', '') !== 'any' &&
+					getType(args[i]) !== argTypes[i].replace('?', '')
+				) {
 					throw `${name} expects argument ${i} to be of type ${
 						argTypes[i]
 					}, got ${getType(args[i])}`
@@ -188,17 +191,21 @@ const functions = {
 		'map',
 		2
 	),
-	getIndex: c(
-		async (a, index) => {
+	index: c(
+		async (a, index, val) => {
 			try {
+				if (val !== undefined) a[index] = val
 				return a[index]
 			} catch {
-				throw `index ${index} is not in map or list`
+				if (getType(a) === 'list' || getType(a) === 'string') throw `index ${index} out of range`
+				else if (getType(a) === 'map') throw `index ${index} not in map`
+				else throw `Can not get index of ${getType(a)}`
 			}
 		},
-		'getIndex',
+		'index',
 		'any',
-		'any'
+		'any',
+		'?any'
 	),
 	slice: c(async (a, start, end) => a.slice(start, end), 'slice', 'any', 'any', 'any'),
 	execute: c(async (block, ...input) => block(...input), 'execute', 1)
@@ -230,7 +237,7 @@ const shorthands = {
 	'>M': '@ convert map',
 	'>D': '@ convert date',
 	'>R': '@ convert regex',
-	'#': '@ getIndex',
+	'#': '@ index',
 	'##': '@ slice',
 	'->': '@ execute'
 }
@@ -243,12 +250,13 @@ for (const key in shorthands) {
 function resolveShorthands(code) {
 	for (let [shorthand, command] of Object.entries(shorthands)) {
 		code = code.replace(
-			new RegExp(`\\s${shorthand}\\s`, 'g'),
+			new RegExp(`(?<!<<[^\\>]*)\\s${shorthand}\\s(?![^\\<]*>>)`, 'g'),
 			` ${command} `
 		)
 	}
 	return code
 }
+const removeComments = code => code.replace(/\/\/.*|\/\*(.|\s)*\*\//g, '')
 
 async function execute(code, input = null, data = null) {
 	if (!code) return input
@@ -389,6 +397,7 @@ let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
 	.join('\n\n')
 let threadPrograms = text.split('\n\n')
 for (let threadProgram of threadPrograms) {
+	threadProgram = removeComments(threadProgram)
 	threadProgram = resolveShorthands(threadProgram)
 	execute(threadProgram)
 		.then(console.log)
