@@ -93,7 +93,7 @@ function c(fn, name, ...argTypes) {
 		return fn(...args)
 	}
 }
-const functions = {
+let functions = {
 	wait: c(
 		(last, ms) => new Promise(resolve => setTimeout(resolve, ms, last)),
 		'wait',
@@ -122,7 +122,16 @@ const functions = {
 	or: c(async (a, b) => a || b, 'or', 'any', 'any'),
 	not: c(async a => !a, 'not', 'any'),
 	if: c(async (a, b, c) => (a ? b() : c()), 'if', 'any', 'block', 'block'),
-	while: c(async (a, b, c) => {while (await b(a)) a = await c(a); return a}, 'while', 'any', 'block', 'block'),
+	while: c(
+		async (a, b, c) => {
+			while (await b(a)) a = await c(a)
+			return a
+		},
+		'while',
+		'any',
+		'block',
+		'block'
+	),
 	type: c(async a => getType(a), 'type', 'any'),
 	length: c(async a => a.length, 'length', 'any'),
 	print: c(
@@ -198,7 +207,8 @@ const functions = {
 				if (val !== undefined) a[index] = val
 				return a[index]
 			} catch {
-				if (getType(a) === 'list' || getType(a) === 'string') throw `index ${index} out of range`
+				if (getType(a) === 'list' || getType(a) === 'string')
+					throw `index ${index} out of range`
 				else if (getType(a) === 'map') throw `index ${index} not in map`
 				else throw `Can not get index of ${getType(a)}`
 			}
@@ -208,7 +218,21 @@ const functions = {
 		'any',
 		'?any'
 	),
-	slice: c(async (a, start, end) => a.slice(start, end), 'slice', 'any', 'any', 'any'),
+	slice: c(
+		async (a, start, end) => a.slice(start, end),
+		'slice',
+		'any',
+		'number',
+		'number'
+	),
+	transform: c(async (a, b) => a.map(b), 'transform', 'any', 'block'),
+	filter: c(async (a, b) => a.filter(b), 'filter', 'any', 'block'),
+	reduce: c(async (a, b, c) => a.reduce((last, current) => {
+		let result = b(current)
+		if (getType(last) === 'list') last.push(result)
+		else last += result
+		return last
+	}, c), 'reduce', 'any', 'block', 'any'),
 	execute: c(async (block, ...input) => block(...input), 'execute', 1)
 }
 const shorthands = {
@@ -394,14 +418,27 @@ async function execute(code, input = null, data = null) {
 			})
 }
 
-let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
-	.map(el => el.textContent)
-	.join('\n\n')
-let threadPrograms = text.split('\n\n')
-for (let threadProgram of threadPrograms) {
-	threadProgram = removeComments(threadProgram)
-	threadProgram = resolveShorthands(threadProgram)
-	execute(threadProgram)
-		.then(console.log)
-		.catch(e => console.error(`error: ${e}`))
+window.onload = function() {
+	let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
+		.map(el => el.textContent)
+		.join('\n\n')
+	let threadPrograms = text.split('\n\n')
+	for (let threadProgram of threadPrograms) {
+		threadProgram = threadProgram.trim()
+		if (threadProgram.startsWith('use')) {
+			let [, ...names] = threadProgram.split(/\s+/g)
+			for (let name of names) {
+				functions = {
+					...functions,
+					...window[name]
+				}
+			}
+		} else {
+			threadProgram = removeComments(threadProgram)
+			threadProgram = resolveShorthands(threadProgram)
+			execute(threadProgram)
+				.then(console.log)
+				.catch(e => console.error(`error: ${e}`))
+		}
+	}
 }
