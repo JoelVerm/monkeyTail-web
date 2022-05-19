@@ -424,21 +424,10 @@ window.onload = function() {
 		.join('\n\n')
 	let threadPrograms = text.split('\n\n')
 	for (let threadProgram of threadPrograms) {
-		threadProgram = threadProgram.trim()
-		if (threadProgram.startsWith('use')) {
-			let [, ...names] = threadProgram.split(/\s+/g)
-			for (let name of names) {
-				functions = {
-					...functions,
-					...window[name]
-				}
-			}
-		} else {
-			threadProgram = removeComments(threadProgram)
-			threadProgram = resolveShorthands(threadProgram)
-			execute(threadProgram)
-				.then(console.log)
-				.catch(e => console.error(`error: ${e}`))
-		}
+		threadProgram = removeComments(threadProgram)
+		threadProgram = resolveShorthands(threadProgram)
+		execute(threadProgram)
+			.then(console.log)
+			.catch(e => console.error(`error: ${e}`))
 	}
 }
