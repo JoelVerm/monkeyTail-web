@@ -419,12 +419,13 @@ async function execute(code, input = null, data = null) {
 }
 
 window.onload = function() {
-	let text = Object.values(document.querySelectorAll('script[type="text/mt"]'))
-		.map(el => el.textContent)
+	let text = Object.values(
+		document.querySelectorAll('script[type="text/mt"]')
+	)
+		.map(el => removeComments(el.textContent))
 		.join('\n\n')
 	let threadPrograms = text.split('\n\n')
 	for (let threadProgram of threadPrograms) {
-		threadProgram = removeComments(threadProgram)
 		threadProgram = resolveShorthands(threadProgram)
 		execute(threadProgram)
 			.then(console.log)
