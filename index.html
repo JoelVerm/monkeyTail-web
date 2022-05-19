@@ -4,10 +4,12 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<script src="mt.js"></script>
+		<script src="dom.mt.js"></script>
 		<title>Test</title>
 	</head>
 	<body>
 		<script type="text/mt">
+			/*
 			{
 				<$> num < 8 ?
 					[ num this:f ]{ $> f -> ( $> num + 2 ) }
@@ -17,6 +19,10 @@
 
 			3 ?= { < 8 }
 				{ + 2 }
+			*/
+		</script>
+		<script type="text/mt">
+			$get body # 0 @ on mousedown { print 8 }
 		</script>
 	</body>
 </html>

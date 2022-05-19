@@ -2,5 +2,10 @@
 	"esversion": 11,
 	"asi": true,
 	"module": true,
-	"browser": true
+	"browser": true,
+	"globals": {
+		"console": true,
+		"functions": true,
+		"c": true
+	}
 }
