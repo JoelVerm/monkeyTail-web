@@ -7,7 +7,7 @@ Object.assign(functions, {
 		'$get',
 		'string'
 	),
-	on: c(
+	$on: c(
 		async (el, name, fn) => el.addEventListener(name, (el, ev) => fn(ev)),
 		'on',
 		'map',
