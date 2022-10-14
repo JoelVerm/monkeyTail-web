@@ -1,6 +1,6 @@
 // function modified from:
 // https://blog.stevenlevithan.com/archives/javascript-match-nested
-// use as: matchRecursive('a(b)c(d(e)f)g', '(...)')
+// use as: matchRecursive('a(b)c(d(e)f)g', '(', ')')
 // returns: [['b', 2, 3], ['d(e)f', 6, 11]]
 
 function matchRecursive(str, opener, closer) {

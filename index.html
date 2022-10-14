@@ -22,7 +22,12 @@
 			*/
 		</script>
 		<script type="text/mt">
-			$get body # 0 @ on mousedown { print 8 }
+			$get body # 0 @ $on mousedown { print 8 }
+		</script>
+		<script type="text/mt">
+			$get body # 0 # style # backgroundColor red
+
+			$get body # 0 # style # height 100vh
 		</script>
 	</body>
 </html>
