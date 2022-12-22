@@ -1,7 +1,7 @@
 // function modified from:
 // https://blog.stevenlevithan.com/archives/javascript-match-nested
 // use as: matchRecursive('a(b)c(d(e)f)g', '(', ')')
-// returns: [['b', 2, 3], ['d(e)f', 6, 11]]
+// returns: [['b', 2, 3, ')'], ['d(e)f', 6, 11, ')']]
 
 function matchRecursive(str, opener, closer) {
 	let openRE = new RegExp(`${opener}`),
@@ -53,7 +53,9 @@ function typeConvert(val) {
 	return val
 }
 const varsFromNames = (names, vars) =>
-	Object.fromEntries(names.map(v => [(v.split(':')[1] || v), vars[(v.split(':')[0] || v)]]))
+	Object.fromEntries(
+		names.map(v => [v.split(':')[1] || v, vars[v.split(':')[0] || v]])
+	)
 const getBlockVars = (data, num) =>
 	varsFromNames(data.codeBlocksVars[num] || [], data.variables)
 const getScopeVars = (data, num) =>
@@ -74,7 +76,13 @@ function c(fn, name, ...argTypes) {
 				throw `${name} expects argument pairs of ${argTypes[0]} arguments`
 			}
 		} else {
-			if (!(args.length -1 <= argTypes.length && args.length - 1 >= argTypes.filter(a => !a.startsWith('?')).length)) {
+			if (
+				!(
+					args.length - 1 <= argTypes.length &&
+					args.length - 1 >=
+						argTypes.filter(a => !a.startsWith('?')).length
+				)
+			) {
 				throw `${name} expects ${argTypes.length} arguments, got ${
 					args.length - 1
 				}: [ ${args.slice(0, -1).join(', ')} ]`
@@ -227,12 +235,19 @@ let functions = {
 	),
 	transform: c(async (a, b) => a.map(b), 'transform', 'any', 'block'),
 	filter: c(async (a, b) => a.filter(b), 'filter', 'any', 'block'),
-	reduce: c(async (a, b, c) => a.reduce((last, current) => {
-		let result = b(current)
-		if (getType(last) === 'list') last.push(result)
-		else last += result
-		return last
-	}, c), 'reduce', 'any', 'block', 'any'),
+	reduce: c(
+		async (a, b, c) =>
+			a.reduce((last, current) => {
+				let result = b(current)
+				if (getType(last) === 'list') last.push(result)
+				else last += result
+				return last
+			}, c),
+		'reduce',
+		'any',
+		'block',
+		'any'
+	),
 	execute: c(async (block, ...input) => block(...input), 'execute', 1)
 }
 const shorthands = {
@@ -375,7 +390,8 @@ async function execute(code, input = null, data = null) {
 	let f = functions[func]
 	if (!f) {
 		if (args.length) throw `error: undefined function ${func}`
-		else if (code[atIndex + 1] === ';') return execute(code.slice(atIndex + 2), null, data)
+		else if (code[atIndex + 1] === ';')
+			return execute(code.slice(atIndex + 2), null, data)
 		else if (func.trim && func.trim() === '')
 			return execute(code.slice(atIndex + 2), input, data)
 		else return execute(code.slice(atIndex + 2), func, data)
@@ -418,7 +434,7 @@ async function execute(code, input = null, data = null) {
 			})
 }
 
-window.onload = function() {
+window.onload = function () {
 	let text = Object.values(
 		document.querySelectorAll('script[type="text/mt"]')
 	)
