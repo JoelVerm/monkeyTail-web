@@ -33,6 +33,7 @@ function matchRecursive(str, opener, closer) {
 	return results
 }
 
+//#region variables
 class Variable {
 	constructor(value) {
 		this.set(value)
@@ -68,12 +69,21 @@ class VarLambda extends Variable {
 		this.value = value
 	}
 }
+const variableClasses = {
+	null: VarNull,
+	bool: VarBool,
+	int: VarInt,
+	float: VarFloat,
+	string: VarString,
+	lambda: VarLambda
+}
 
 function getType(val) {
 	return val.constructor.name.slice(3).toLowerCase()
 }
 
 function parseVariable(val) {
+	if (val.constructor.__proto__ === Variable) return val
 	if (val === 'true') return new VarBool(true)
 	if (val === 'false') return new VarBool(false)
 	if (val === 'null') return new VarNull(null)
@@ -88,8 +98,9 @@ function parseVariable(val) {
 	}
 	return new VarNull(null)
 }
+//#endregion variables
 
-//TODO here
+//#region lambdas
 const varsFromNames = (names, vars) =>
 	Object.fromEntries(
 		names.map(v => [v.split(':')[1] || v, vars[v.split(':')[0] || v]])
@@ -102,10 +113,11 @@ const getScopeVars = (data, num) =>
 		: { ...data.variables }
 
 const codeBlock = (code, vars) => {
-	let f = async (i = null) =>
-		execute(code, i, { variables: { ...vars, this: f } })
-	return f
+	let f = async (i = null, args = {}) =>
+		execute(code, i, { variables: { ...vars, ...args, this: f } })
+	return new VarLambda(f)
 }
+//#endregion lambdas
 
 const functions = {}
 
@@ -130,9 +142,10 @@ function addMtFunction(fn, name) {
 		: argsDefs.length
 	let pipeArgPos = argsDefs.findIndex(e => e[0].startsWith('_'))
 	if (pipeArgPos === -1) pipeArgPos = 0
-	const [fnName, returns] = name.split('$')
+	let [fnName, returns] = name.split('$')
 	functions[fnName] = (pipeArg, ...args) => {
 		if (pipeArg ?? false) args.splice(pipeArgPos, 0, pipeArg)
+		if (returns === '_') returns = getType(args[0])
 		if (
 			args.length < minArgsLen ||
 			(maxArgsLen && args.length > maxArgsLen)
@@ -158,15 +171,7 @@ function addMtFunction(fn, name) {
 			if (!argsDefs[index][1].endsWith('_')) args[i] = args[i].value
 		}
 		return fn(...args).then(v =>
-			returns
-				? returns === '_'
-					? new args[0].constructor(v)
-					: new window[
-							'Var' +
-								returns.charAt(0).toUpperCase() +
-								returns.slice(1)
-					  ](v)
-				: v
+			returns ? new variableClasses[returns](v) : v
 		)
 	}
 }
@@ -234,14 +239,14 @@ addMtFunction(
 	async (a$bool, b$lambda, c$lambda) => (a$bool ? b$lambda() : c$lambda()),
 	'if'
 )
-addMtFunction(async (a$any, b$lambda, c$lambda) => {
-	while (await b$lambda(a$any)) a$any = await c$lambda(a$any)
-	return a$any
+addMtFunction(async (a$any_, b$lambda, c$lambda) => {
+	while ((await b$lambda(a$any_)).value) a$any_ = await c$lambda(a$any_)
+	return a$any_.value
 }, 'while$_')
 addMtFunction(async a$any => getType(a$any), 'type$string')
 addMtFunction(async a$any => a$any.length, 'length$int') //TODO specify iterable type
 addMtFunction(async (...a$any) => {
-	console.log(...a$any.slice(0, -1))
+	console.log(...a$any)
 	return a$any[0]
 }, 'print$_')
 addMtFunction(
@@ -305,7 +310,7 @@ addMtFunction(
 	'reduce$_'
 ) // TODO specify iterable type
 addMtFunction(
-	async (block$lambda, ...input$any) => block$lambda(...input$any),
+	async (block$lambda, ...input$any_) => block$lambda(...input$any_),
 	'execute'
 )
 //#endregion functions
@@ -348,7 +353,7 @@ function resolveShorthands(code) {
 	}
 	return code
 }
-const removeComments = code => code.replace(/\/\/.*|\/\*(.|\s)*\*\//g, '')
+const removeComments = code => code.replace(/\/\/[^\n]*\n|\/\*(.|\n)*\*\//g, '')
 
 async function execute(code, input = null, data = null) {
 	if (!code) return input
@@ -482,8 +487,9 @@ window.onload = function () {
 		.join('\n\n')
 	let threadPrograms = text.split('\n\n')
 	for (let threadProgram of threadPrograms) {
+		if (!threadProgram.trim()) continue
 		execute(threadProgram)
-			.then(console.log)
+			.then(r => console.log(r.value))
 			.catch(e => console.error(`error: ${e}`))
 	}
 }
