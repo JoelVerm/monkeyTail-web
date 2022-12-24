@@ -33,25 +33,63 @@ function matchRecursive(str, opener, closer) {
 	return results
 }
 
+class Variable {
+	constructor(value) {
+		this.set(value)
+	}
+}
+class VarNull extends Variable {
+	set() {
+		this.value = null
+	}
+}
+class VarBool extends Variable {
+	set(value) {
+		this.value = Boolean(value)
+	}
+}
+class VarInt extends Variable {
+	set(value) {
+		this.value = Math.round(Number(value))
+	}
+}
+class VarFloat extends Variable {
+	set(value) {
+		this.value = Number(value)
+	}
+}
+class VarString extends Variable {
+	set(value) {
+		this.value = value.toString()
+	}
+}
+class VarLambda extends Variable {
+	set(value) {
+		this.value = value
+	}
+}
+
 function getType(val) {
-	if (typeof val === 'string') return 'string'
-	else if (typeof val === 'number') return 'number'
-	else if (typeof val === 'boolean') return 'boolean'
-	else if (Array.isArray(val)) return 'list'
-	else if (val instanceof Date) return 'date'
-	else if (val instanceof RegExp) return 'regex'
-	else if (val instanceof Function) return 'block'
-	else if (typeof val === 'object') return 'map'
-	else throw `type ${typeof val} of ${val} is not implemented`
+	return val.constructor.name.slice(3).toLowerCase()
 }
-function typeConvert(val) {
-	if (val === 'true') return true
-	if (val === 'false') return false
-	if (val === 'null') return null
-	if (val.trim && val.trim() === '') return val
-	if (!Number.isNaN(Number(val))) return Number(val)
-	return val
+
+function parseVariable(val) {
+	if (val === 'true') return new VarBool(true)
+	if (val === 'false') return new VarBool(false)
+	if (val === 'null') return new VarNull(null)
+	if (!Number.isNaN(Number(val))) {
+		const n = Number(val)
+		if (n.toFixed() === n.toString()) return new VarInt(n)
+		return new VarFloat(n)
+	}
+	if (val.trim) {
+		if (val.trim() === '') return new VarNull(null)
+		return new VarString(val)
+	}
+	return new VarNull(null)
 }
+
+//TODO here
 const varsFromNames = (names, vars) =>
 	Object.fromEntries(
 		names.map(v => [v.split(':')[1] || v, vars[v.split(':')[0] || v]])
@@ -69,187 +107,209 @@ const codeBlock = (code, vars) => {
 	return f
 }
 
-function c(fn, name, ...argTypes) {
-	return (...args) => {
-		if (typeof argTypes[0] === 'number') {
-			if ((args.length - 1) % argTypes[0] !== 0) {
-				throw `${name} expects argument pairs of ${argTypes[0]} arguments`
-			}
-		} else {
-			if (
-				!(
-					args.length - 1 <= argTypes.length &&
-					args.length - 1 >=
-						argTypes.filter(a => !a.startsWith('?')).length
-				)
-			) {
-				throw `${name} expects ${argTypes.length} arguments, got ${
-					args.length - 1
-				}: [ ${args.slice(0, -1).join(', ')} ]`
-			}
-			for (let i = 0; i < args.length - 1; i++) {
-				if (
-					argTypes[i].replace('?', '') !== 'any' &&
-					getType(args[i]) !== argTypes[i].replace('?', '')
-				) {
-					throw `${name} expects argument ${i} to be of type ${
-						argTypes[i]
-					}, got ${getType(args[i])}`
-				}
-			}
+const functions = {}
+
+/**
+ * @param {Function} fn
+ * @returns {Function}
+ */
+function addMtFunction(fn, name) {
+	const argsDefs = fn
+		.toString()
+		.split('=>')[0]
+		.replace('(', '')
+		.replace(')', '')
+		.replace('async', '')
+		.split(',')
+		.map(e => e.trim().split('$'))
+	const minArgsLen = argsDefs.filter(
+		e => !e[0].startsWith('...') && !e[1].startsWith('_')
+	).length
+	const maxArgsLen = argsDefs[argsDefs.length - 1][0].startsWith('...')
+		? null
+		: argsDefs.length
+	let pipeArgPos = argsDefs.findIndex(e => e[0].startsWith('_'))
+	if (pipeArgPos === -1) pipeArgPos = 0
+	const [fnName, returns] = name.split('$')
+	functions[fnName] = (pipeArg, ...args) => {
+		if (pipeArg ?? false) args.splice(pipeArgPos, 0, pipeArg)
+		if (
+			args.length < minArgsLen ||
+			(maxArgsLen && args.length > maxArgsLen)
+		) {
+			throw `${fnName} expects between ${minArgsLen} and ${maxArgsLen} arguments, got ${
+				args.length
+			}: ${args.slice(0, -1).join(', ')}`
 		}
-		return fn(...args)
+		for (let i = 0; i < args.length; i++) {
+			const index = Math.min(i, argsDefs.length - 1)
+			if (
+				argsDefs[index][1].replace('_', '') !== 'any' &&
+				!argsDefs[index][1].split('_').includes(getType(args[index]))
+			) {
+				throw `${fnName} expects ${
+					index === pipeArgPos && pipeArg ? 'piped ' : ''
+				}argument [${argsDefs[index][0]
+					.replace('...', '')
+					.replace('_', '')}] to be of type <${
+					argsDefs[index][1]
+				}>, got <${getType(args[i])}>:${args[i].value}`
+			}
+			if (!argsDefs[index][1].endsWith('_')) args[i] = args[i].value
+		}
+		return fn(...args).then(v =>
+			returns
+				? returns === '_'
+					? new args[0].constructor(v)
+					: new window[
+							'Var' +
+								returns.charAt(0).toUpperCase() +
+								returns.slice(1)
+					  ](v)
+				: v
+		)
 	}
 }
-let functions = {
-	wait: c(
-		(last, ms) => new Promise(resolve => setTimeout(resolve, ms, last)),
-		'wait',
-		'any',
-		'number'
-	),
-	fetch: c(url => fetch(url).then(res => res.json()), 'fetch', 'string'),
-	add: c(async (a, b) => a + b, 'add', 'any', 'any'),
-	subtract: c(async (a, b) => a - b, 'subtract', 'any', 'any'),
-	multiply: c(async (a, b) => a * b, 'multiply', 'any', 'any'),
-	divide: c(async (a, b) => a / b, 'divide', 'any', 'any'),
-	modulo: c(async (a, b) => a % b, 'modulo', 'any', 'any'),
-	power: c(async (a, b) => a ** b, 'power', 'any', 'any'),
-	sqrt: c(async a => Math.sqrt(a), 'sqrt', 'any'),
-	abs: c(async a => Math.abs(a), 'abs', 'any'),
-	floor: c(async a => Math.floor(a), 'floor', 'any'),
-	ceil: c(async a => Math.ceil(a), 'ceil', 'any'),
-	round: c(async a => Math.round(a), 'round', 'any'),
-	greater: c(async (a, b) => a > b, 'greater', 'any', 'any'),
-	less: c(async (a, b) => a < b, 'less', 'any', 'any'),
-	greaterEqual: c(async (a, b) => a >= b, 'greaterEqual', 'any', 'any'),
-	lessEqual: c(async (a, b) => a <= b, 'lessEqual', 'any', 'any'),
-	equal: c(async (a, b) => a === b, 'equal', 'any', 'any'),
-	notEqual: c(async (a, b) => a !== b, 'notEqual', 'any', 'any'),
-	and: c(async (a, b) => a && b, 'and', 'any', 'any'),
-	or: c(async (a, b) => a || b, 'or', 'any', 'any'),
-	not: c(async a => !a, 'not', 'any'),
-	if: c(async (a, b, c) => (a ? b() : c()), 'if', 'any', 'block', 'block'),
-	while: c(
-		async (a, b, c) => {
-			while (await b(a)) a = await c(a)
-			return a
-		},
-		'while',
-		'any',
-		'block',
-		'block'
-	),
-	type: c(async a => getType(a), 'type', 'any'),
-	length: c(async a => a.length, 'length', 'any'),
-	print: c(
-		async (...a) => {
-			console.log(...a.slice(0, -1))
-			return a[0]
-		},
-		'print',
-		1
-	),
-	convert: c(
-		async (value, to) => {
-			try {
-				switch (to) {
-					case 'number':
-						return Number(value)
-					case 'string':
-						return String(value)
-					case 'boolean':
-						return Boolean(value)
-					case 'list':
-						return Array.isArray(value) ? value : [value]
-					case 'map':
-						return typeof value === 'object' ? value : { value }
-					case 'date':
-						return new Date(value)
-					case 'regex':
-						return new RegExp(value)
-					default:
-						throw `invalid conversion type: ${to}`
-				}
-			} catch {
-				throw `can not convert ${value} to ${to}`
-			}
-		},
-		'convert',
-		'any',
-		'string'
-	),
-	variable: c(
-		async (value, set, name, data) => {
-			if (!data.variables) data.variables = {}
-			if (set) data.variables[name] = value
-			if (!data.variables[name]) throw `undefined variable: ${name}`
-			return data.variables[name]
-		},
-		'variable',
-		'any',
-		'boolean',
-		'string'
-	),
-	list: c(async (...args) => [...args.slice(0, -1)], 'list', 1),
-	map: c(
-		async (...args) => {
-			if (args.length % 2 === 1)
-				return Object.fromEntries(
-					args
-						.slice(0, -1)
-						.reduce(function (result, value, index, array) {
-							if (index % 2 === 0)
-								result.push(array.slice(index, index + 2))
-							return result
-						}, [])
-				)
-			else throw 'last map key has no value'
-		},
-		'map',
-		2
-	),
-	index: c(
-		async (a, index, val) => {
-			try {
-				if (val !== undefined) a[index] = val
-				return a[index]
-			} catch {
-				if (getType(a) === 'list' || getType(a) === 'string')
-					throw `index ${index} out of range`
-				else if (getType(a) === 'map') throw `index ${index} not in map`
-				else throw `Can not get index of ${getType(a)}`
-			}
-		},
-		'index',
-		'any',
-		'any',
-		'?any'
-	),
-	slice: c(
-		async (a, start, end) => a.slice(start, end),
-		'slice',
-		'any',
-		'number',
-		'number'
-	),
-	transform: c(async (a, b) => a.map(b), 'transform', 'any', 'block'),
-	filter: c(async (a, b) => a.filter(b), 'filter', 'any', 'block'),
-	reduce: c(
-		async (a, b, c) =>
-			a.reduce((last, current) => {
-				let result = b(current)
-				if (getType(last) === 'list') last.push(result)
-				else last += result
-				return last
-			}, c),
-		'reduce',
-		'any',
-		'block',
-		'any'
-	),
-	execute: c(async (block, ...input) => block(...input), 'execute', 1)
-}
+//#region functions
+addMtFunction(
+	(last$any_, ms$int) =>
+		new Promise(resolve => setTimeout(resolve, ms$int, last$any_)),
+	'wait'
+)
+addMtFunction(
+	url$string => fetch(url$string).then(res => res.json()),
+	'fetch$string'
+)
+addMtFunction(
+	async (a$int_float, b$int_float) => a$int_float + b$int_float,
+	'add$_'
+)
+addMtFunction(
+	async (a$int_float, b$int_float) => a$int_float - b$int_float,
+	'subtract$_'
+)
+addMtFunction(
+	async (a$int_float, b$int_float) => a$int_float * b$int_float,
+	'multiply$_'
+)
+addMtFunction(
+	async (a$int_float, b$int_float) => a$int_float / b$int_float,
+	'divide$_'
+)
+addMtFunction(
+	async (a$int_float, b$int_float) => a$int_float % b$int_float,
+	'modulo$_'
+)
+addMtFunction(
+	async (a$int_float, b$int_float) => a$int_float ** b$int_float,
+	'power$_'
+)
+addMtFunction(async a$int_float => Math.sqrt(a$int_float), 'sqrt$_')
+addMtFunction(async a$int_float => Math.abs(a$int_float), 'abs$_')
+addMtFunction(async a$int_float => Math.floor(a$int_float), 'floor$_')
+addMtFunction(async a$int_float => Math.ceil(a$int_float), 'ceil$_')
+addMtFunction(async a$int_float => Math.round(a$int_float), 'round$_')
+addMtFunction(
+	async (a$int_float, b$int_float) => a$int_float > b$int_float,
+	'greater$bool'
+)
+addMtFunction(
+	async (a$int_float, b$int_float) => a$int_float < b$int_float,
+	'less$bool'
+)
+addMtFunction(
+	async (a$int_float, b$int_float) => a$int_float >= b$int_float,
+	'greaterEqual$bool'
+)
+addMtFunction(
+	async (a$int_float, b$int_float) => a$int_float <= b$int_float,
+	'lessEqual$bool'
+)
+addMtFunction(async (a$any, b$any) => a$any === b$any, 'equal$bool')
+addMtFunction(async (a$any, b$any) => a$any !== b$any, 'notEqual$bool')
+addMtFunction(async (a$bool, b$bool) => a$bool && b$bool, 'and$bool')
+addMtFunction(async (a$bool, b$bool) => a$bool || b$bool, 'or$bool')
+addMtFunction(async a$bool => !a$bool, 'not$bool')
+addMtFunction(
+	async (a$bool, b$lambda, c$lambda) => (a$bool ? b$lambda() : c$lambda()),
+	'if'
+)
+addMtFunction(async (a$any, b$lambda, c$lambda) => {
+	while (await b$lambda(a$any)) a$any = await c$lambda(a$any)
+	return a$any
+}, 'while$_')
+addMtFunction(async a$any => getType(a$any), 'type$string')
+addMtFunction(async a$any => a$any.length, 'length$int') //TODO specify iterable type
+addMtFunction(async (...a$any) => {
+	console.log(...a$any.slice(0, -1))
+	return a$any[0]
+}, 'print$_')
+addMtFunction(
+	//TODO variable types separate functions
+	async (value$any, set$any, name$string, data$any) => {
+		if (!data$any.variables) data$any.variables = {}
+		if (set$any) data$any.variables[name$string] = value$any
+		if (!data$any.variables[name$string])
+			throw `undefined variable: ${name$string}`
+		return data$any.variables[name$string]
+	},
+	'variable$_'
+)
+addMtFunction(async (...args$any) => args$any, 'list$_', 1)
+addMtFunction(
+	//TODO specify iterable type
+	async (...args$any) => {
+		if (args$any.length % 2 === 1)
+			return Object.fromEntries(
+				args$any.reduce(function (result, value, index, array) {
+					if (index % 2 === 0)
+						result.push(array.slice(index, index + 2))
+					return result
+				}, [])
+			)
+		else throw 'last map key has no value'
+	},
+	'map$_'
+)
+addMtFunction(
+	//TODO specify iterable type
+	async (a$any, index$int, val$_any) => {
+		try {
+			if (val$_any !== undefined) a$any[index$int] = val$_any
+			return a$any[index$int]
+		} catch {
+			if (getType(a$any) === 'list' || getType(a$any) === 'string')
+				throw `index ${index$int} out of range`
+			else if (getType(a$any) === 'map')
+				throw `index ${index$int} not in map`
+			else throw `Can not get index of ${getType(a$any)}`
+		}
+	},
+	'index$_'
+)
+addMtFunction(
+	//TODO specify iterable type
+	async (a$any, start$int, end$int) => a$any.slice(start$int, end$int),
+	'slice$_'
+)
+addMtFunction(async (a$any, b$lambda) => a$any.map(b$lambda), 'transform$_') //TODO specify iterable type
+addMtFunction(async (a$any, b$lambda) => a$any.filter(b$lambda), 'filter$_') // TODO specify iterable type
+addMtFunction(
+	async (a$any, b$lambda, c$any) =>
+		a$any.reduce((last, current) => {
+			let result = b$lambda(current)
+			if (getType(last) === 'list') last.push(result)
+			else last += result
+			return last
+		}, c$any),
+	'reduce$_'
+) // TODO specify iterable type
+addMtFunction(
+	async (block$lambda, ...input$any) => block$lambda(...input$any),
+	'execute'
+)
+//#endregion functions
+
 const shorthands = {
 	'+': '@ add',
 	'-': '@ subtract',
@@ -269,15 +329,6 @@ const shorthands = {
 	'!': '@ not',
 	'?': '@ if',
 	'?=': '@ while',
-	'<$>': '@ variable true',
-	'$>': '; variable null false',
-	'>N': '@ convert number',
-	'>S': '@ convert string',
-	'>B': '@ convert boolean',
-	'>L': '@ convert list',
-	'>M': '@ convert map',
-	'>D': '@ convert date',
-	'>R': '@ convert regex',
 	'#': '@ index',
 	'##': '@ slice',
 	'->': '@ execute'
@@ -314,9 +365,7 @@ async function execute(code, input = null, data = null) {
 		let codeBlocks = []
 		let codeBlocksVars = {}
 		let strings = []
-		for (const tuple of parentheses) {
-			let [str, start, end, char] = tuple
-
+		for (const [str, start, end, char] of parentheses) {
 			if (char === ']') {
 				let type = code[end + replaceOffset + 1]
 				if (type === '(')
@@ -369,9 +418,6 @@ async function execute(code, input = null, data = null) {
 	if (atIndex === -1) atIndex = code.length
 	let thisStatement = code.slice(0, atIndex).trim()
 	let [func, ...args] = thisStatement.split(/\s+/)
-	try {
-		func = typeConvert(func)
-	} catch {}
 	if (typeof func === 'string') {
 		if (func.startsWith('(')) {
 			let num = func.slice(1, -1)
@@ -394,7 +440,7 @@ async function execute(code, input = null, data = null) {
 			return execute(code.slice(atIndex + 2), null, data)
 		else if (func.trim && func.trim() === '')
 			return execute(code.slice(atIndex + 2), input, data)
-		else return execute(code.slice(atIndex + 2), func, data)
+		else return execute(code.slice(atIndex + 2), parseVariable(func), data)
 	}
 	for (const i in args) {
 		if (typeof args[i] === 'string') {
@@ -411,27 +457,20 @@ async function execute(code, input = null, data = null) {
 				)
 			} else if (args[i].startsWith('<<')) {
 				let num = args[i].slice(2, -2)
-				args[i] = data.strings[num]
-			}
-		}
-		args[i] = typeConvert(args[i])
+				args[i] = new VarString(data.strings[num])
+			} else args[i] = parseVariable(args[i])
+		} else args[i] = parseVariable(args[i])
 	}
 	let cbf
 	if (code[atIndex + 1] === ';')
 		cbf = v => execute(code.slice(atIndex + 2), null, data)
 	else cbf = v => execute(code.slice(atIndex + 2), v, data)
-	if (input === null)
-		return f(...args, data)
-			.then(cbf)
-			.catch(e => {
-				throw e + '\nat:\t' + code.trim()
-			})
-	else
-		return f(input, ...args, data)
-			.then(cbf)
-			.catch(e => {
-				throw e + '\nat:\t' + code.trim()
-			})
+	return f(input, ...args)
+		.then(res => (typeof res === 'function' ? res(data) : res))
+		.then(cbf)
+		.catch(e => {
+			throw e + '\nat:\t' + code.trim()
+		})
 }
 
 window.onload = function () {
@@ -439,10 +478,10 @@ window.onload = function () {
 		document.querySelectorAll('script[type="text/mt"]')
 	)
 		.map(el => removeComments(el.textContent))
+		.map(el => resolveShorthands(el))
 		.join('\n\n')
 	let threadPrograms = text.split('\n\n')
 	for (let threadProgram of threadPrograms) {
-		threadProgram = resolveShorthands(threadProgram)
 		execute(threadProgram)
 			.then(console.log)
 			.catch(e => console.error(`error: ${e}`))

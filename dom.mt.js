@@ -1,17 +1,12 @@
-Object.assign(functions, {
-	$get: c(
-		async name =>
-			name.startsWith('#')
-				? document.querySelector(name)
-				: document.querySelectorAll(name),
-		'$get',
-		'string'
-	),
-	$on: c(
-		async (el, name, fn) => el.addEventListener(name, (el, ev) => fn(ev)),
-		'on',
-		'map',
-		'string',
-		'block'
-	)
-})
+addMtFunction(
+	async name$string =>
+		name$string.startsWith('#')
+			? document.querySelector(name$string)
+			: document.querySelectorAll(name$string),
+	'HTMLget'
+)
+addMtFunction(
+	async (el$any, name$string, fn$lambda) =>
+		el$any.addEventListener(name$string, (el, ev) => fn$lambda(ev)),
+	'HTMLon'
+)

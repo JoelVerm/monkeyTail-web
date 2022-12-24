@@ -9,23 +9,24 @@
 	</head>
 	<body>
 		<script type="text/mt">
-			{
-				<$> num < 8 ?
-					[ num this:f ]{ $> f -> ( $> num + 2 ) }
-					[num]{ $> num }
-			} <$> ptf ;
-			$> ptf -> 3
-
-			3 ?= { < 8 }
-				{ + 2 }
+						         /*
+						{
+							<$> num < 8 ?
+								[ num this:f ]{ $> f -> ( $> num + 2 ) }
+								[num]{ $> num }
+						} <$> ptf ;
+						$> ptf -> 3
+			*/
+						3 ?= { < 8 }
+							{ + 2 }
 		</script>
 		<script type="text/mt">
-			$get body # 0 @ $on mousedown { print 8 }
+			//HTMLget body @ print # 0 @ HTMLon mousedown { print 8 }
 		</script>
 		<script type="text/mt">
-			$get body # 0 # style # backgroundColor red
+			//HTMLget body # 0 # style # backgroundColor red
 
-			$get body # 0 # style # height 100vh
+			//HTMLget body # 0 # style # height 100vh
 		</script>
 	</body>
 </html>
