@@ -188,6 +188,8 @@ addMtFunction(
 addMtFunction(async (block$, ...input) => block$(...input), 'execute')
 //#endregion functions
 
+// !Remove type function
+
 const shorthands = {
 	'+': '@ add',
 	'-': '@ subtract',
@@ -196,6 +198,11 @@ const shorthands = {
 	'%': '@ modulo',
 	'^': '@ power',
 	'**': '@ power',
+	'v/': '@ sqrt',
+	'|.|': '@abs',
+	'|v|': '@ floor',
+	'|^|': '@ ceil',
+	'|x|': '@ round',
 	'>': '@ greater',
 	'<': '@ less',
 	'>=': '@ greaterEqual',
@@ -207,6 +214,8 @@ const shorthands = {
 	'!': '@ not',
 	'?': '@ if',
 	'?=': '@ while',
+    '#-': '@ length',
+    '|>': '@ print',
 	'#': '@ index',
 	'##': '@ slice',
 	'->': '@ execute'
