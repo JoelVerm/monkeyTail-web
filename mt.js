@@ -33,7 +33,7 @@ function matchRecursive(str, opener, closer) {
 	return results
 }
 
-function parseVariable(val) {
+function parseValue(val) {
 	const n = Number(val)
 	if (!isNaN(n)) {
 		return n
@@ -46,6 +46,23 @@ function parseVariable(val) {
 }
 
 const functions = {}
+
+function curry(fn, checkFn = null) {
+	function curried(argsIn = [], args = []) {
+		args = args.concat(argsIn)
+		if (checkFn && !checkFn(argsIn, args)) return null
+		if (args.length >= fn.length) {
+			return fn(...args)
+		} else {
+			return function (...argsIn) {
+				return curried(argsIn, args)
+			}
+		}
+	}
+	return function (...argsIn) {
+		return curried(argsIn)
+	}
+}
 
 /**
  * @param {Function} fn
@@ -60,40 +77,32 @@ function addMtFunction(fn, name) {
 		.replace('async', '')
 		.split(',')
 		.map(e => e.trim())
-	const minArgsLen = argsDefs.filter(e => !e.startsWith('...')).length
 	const maxArgsLen = argsDefs[argsDefs.length - 1].startsWith('...')
 		? null
 		: argsDefs.length
-	let pipeArgPos = argsDefs.findIndex(e => e[0].startsWith('_'))
-	if (pipeArgPos === -1) pipeArgPos = 0
-	functions[name] = (pipeArg, ...args) => {
-		if (pipeArg != null) args.splice(pipeArgPos, 0, pipeArg)
-		if (
-			args.length < minArgsLen ||
-			(maxArgsLen && args.length > maxArgsLen)
-		) {
-			throw `${name} expects between ${minArgsLen} and ${maxArgsLen} arguments, got ${
-				args.length
-			}: ${args.join(', ')}`
+
+	functions[name] = curry(fn, (newArgs, args) => {
+		if (maxArgsLen && args.length > maxArgsLen) {
+			throw `${name} expects less than ${maxArgsLen} arguments, got ${args.length}: ${args}`
 		}
-		for (let i = 0; i < args.length; i++) {
-			const index = Math.min(i, argsDefs.length - 1)
+		const argPosOffset = args.length - newArgs.length
+		for (let i = 0; i < newArgs.length; i++) {
+			const argPos = i + argPosOffset
+			const index = Math.min(argPos, argsDefs.length - 1)
 			if (
 				argsDefs[index].endsWith('$') &&
 				!(typeof args[i] === 'function')
 			) {
-				throw `${name} expects ${
-					index === pipeArgPos && pipeArg ? 'piped ' : ''
-				}argument [${argsDefs[index]
+				throw `${name} expects argument [${argsDefs[index]
 					.replace('...', '')
 					.replace('_', '')
-					.replace('$', '')}] to be a <${
+					.replace('$', '')}] to be a ${
 					argsDefs[index].endsWith('$') ? 'function' : 'value'
-				}>, got opposite: ${args[i]}`
+				}, got opposite: ${args[i]}`
 			}
 		}
-		return fn(...args)
-	}
+		return true
+	})
 }
 //#region functions
 addMtFunction(
@@ -131,50 +140,26 @@ addMtFunction(async (a, b$, c$) => {
 	}
 	return a
 }, 'while')
-addMtFunction(async a => getType(a), 'type')
-addMtFunction(async a => a.length, 'length') //TODO specify iterable type
+addMtFunction(async a => a.length, 'length')
 addMtFunction(async (...a) => {
 	console.log(...a)
 	return a[0]
 }, 'print')
 addMtFunction(async (...args) => args, 'list', 1)
-addMtFunction(
-	//TODO specify iterable type
-	async (...args) => {
-		if (args.length % 2 === 1)
-			return Object.fromEntries(
-				args.reduce(function (result, value, index, array) {
-					if (index % 2 === 0)
-						result.push(array.slice(index, index + 2))
-					return result
-				}, [])
-			)
-		else throw 'last map key has no value'
-	},
-	'map'
-)
-addMtFunction(
-	//TODO specify iterable type
-	async (a, index, val) => {
-		try {
-			if (val !== undefined) a[index] = val
-			return a[index]
-		} catch {
-			if (getType(a) === 'list' || getType(a) === 'string')
-				throw `index ${index} out of range`
-			else if (getType(a) === 'map') throw `index ${index} not in map`
-			else throw `Can not get index of ${getType(a)}`
-		}
-	},
-	'index'
-)
-addMtFunction(
-	//TODO specify iterable type
-	async (a, start, end) => a.slice(start, end),
-	'slice'
-)
-addMtFunction(async (a, b$) => a.map(b$), 'transform') //TODO specify iterable type
-addMtFunction(async (a, b$) => a.filter(b$), 'filter') // TODO specify iterable type
+addMtFunction(async (a, index, val) => {
+	try {
+		if (val !== undefined) a[index] = val
+		return a[index]
+	} catch {
+		if (getType(a) === 'list' || getType(a) === 'string')
+			throw `index ${index} out of range`
+		else if (getType(a) === 'map') throw `index ${index} not in map`
+		else throw `Can not get index of ${getType(a)}`
+	}
+}, 'index')
+addMtFunction(async (a, start, end) => a.slice(start, end), 'slice')
+addMtFunction(async (a, b$) => await Promise.all(a.map(b$)), 'map')
+addMtFunction(async (a, b$) => a.filter(b$), 'filter')
 addMtFunction(
 	async (a, b$, c) =>
 		a.reduce((last, current) => {
@@ -184,11 +169,9 @@ addMtFunction(
 			return last
 		}, c),
 	'reduce'
-) // TODO specify iterable type
+)
 addMtFunction(async (block$, ...input) => block$(...input), 'execute')
 //#endregion functions
-
-// !Remove type function
 
 const shorthands = {
 	'+': '@ add',
@@ -292,9 +275,14 @@ function replaceBlocks(code) {
 /**
  * @param {string} text
  * @param {CodeData} data
+ * @param {{string:any}} variables
  */
-async function processCall(text, data) {
-	let [func, ...args] = text.replace(/(\s|^)[@;]\s/, '').split(/\s+/)
+async function processCall(text, data, variables) {
+	let [func, ...args] = text
+		.replace(/(\s|^)[@;]\s/, '')
+		.trim()
+		.split(/(?<=[^\s])\s+/)
+	reset = text.includes(';')
 	if (func.startsWith('(')) {
 		let num = func.slice(1, -1)
 		func = await execute(data.innerScopes[num])
@@ -304,13 +292,24 @@ async function processCall(text, data) {
 	} else if (func.startsWith('<<')) {
 		let num = func.slice(2, -2)
 		func = data.strings[num]
+	} else if (func.startsWith('$')) {
+		let f = variables[func.slice(1)]
+		if (f == null) throw `undefined variable ${func.slice(1)}`
+		func = f
+	} else if (func === 'var') {
+		let varName = args[0]
+		variables[varName] = { isVariable: true, varName, value: null }
+		func = (varName, value) => {
+			variables[varName].value = value
+			return value
+		}
 	} else {
 		let f = functions[func]
 		if (f) {
 			func = f
 		} else {
 			if (args.length) throw `undefined function ${func}`
-			return [parseVariable(func)]
+			return [parseValue(func)]
 		}
 	}
 	for (const i in args) {
@@ -323,35 +322,50 @@ async function processCall(text, data) {
 		} else if (args[i].startsWith('<<')) {
 			let num = args[i].slice(2, -2)
 			args[i] = data.strings[num]
+		} else if (args[i].startsWith('$')) {
+			let f = variables[args[i].slice(1)]
+			if (f == null) throw `undefined variable ${args[i].slice(1)}`
+			args[i] = f
 		} else {
 			let f = functions[args[i]]
-			if (f) {
-				args[i] = f
+			if (f == null) {
+				args[i] = parseValue(args[i])
 			} else {
-				args[i] = parseVariable(args[i])
+				args[i] = f
 			}
 		}
 	}
-	return [func, args]
+	return [reset, func, args]
 }
 
 async function createComposition(code) {
 	const data = replaceBlocks(code)
 
+	const variables = {}
+
 	let compositions = data.code.matchAll(/(\s[@;]\s|^)(.|\n)*?(?=\s[@;]\s|$)/g)
 	let callList = []
 	for (let app of compositions) {
 		app = app[0].trim()
-		let [func, args] = await processCall(app, data)
-		if (typeof func !== 'function') {
-			callList.push(() => func)
-			continue
-		}
-		callList.push(v => func(v, ...args))
+		callList.push(await processCall(app, data, variables))
 	}
 	return async inp => {
-		for (call of callList) {
-			inp = await call(inp)
+		for (let [reset, func, args] of callList) {
+			if (reset) inp = null
+			if (typeof func !== 'function') {
+				inp = func
+				continue
+			}
+			if (inp != null) args = [inp, ...args]
+			inp = await func(
+				...args.map(v => {
+					if (v.isVariable === true && v.varName) {
+						if (v.value == null)
+							throw `unassigned variable ${v.varName}`
+						return v.value
+					} else return v
+				})
+			)
 		}
 		return inp
 	}
