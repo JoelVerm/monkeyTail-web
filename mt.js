@@ -95,7 +95,7 @@ function addMtFunction(fn, name) {
 		? null
 		: argsDefs.length
 
-	functions[name] = curry(fn, (newArgs, args) => {
+	functions[name] = curry(applied(fn), (newArgs, args) => {
 		if (maxArgsLen && args.length > maxArgsLen) {
 			throw `${name} expects less than ${maxArgsLen} arguments, got ${args.length}: ${args}`
 		}
