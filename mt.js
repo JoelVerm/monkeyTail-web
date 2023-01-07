@@ -64,6 +64,20 @@ function curry(fn, checkFn = null) {
 		return curried(argsIn)
 	}
 }
+function applied(fn) {
+	return function apply(...args) {
+		for (const i in args) {
+			if (!isBareValue(args[i])) {
+				return args[i].map(e => {
+					const a = [...args]
+					a[i] = e
+					return apply(...a)
+				})
+			}
+		}
+		return fn(...args)
+	}
+}
 /**
  * @param {Function} fn
  * @returns {Function}
