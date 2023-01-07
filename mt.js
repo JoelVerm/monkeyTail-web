@@ -48,7 +48,6 @@ function parseValue(val) {
 }
 
 const functions = {}
-
 function curry(fn, checkFn = null) {
 	function curried(argsIn = [], args = []) {
 		args = args.concat(argsIn)
@@ -65,7 +64,6 @@ function curry(fn, checkFn = null) {
 		return curried(argsIn)
 	}
 }
-
 /**
  * @param {Function} fn
  * @returns {Function}
@@ -147,7 +145,7 @@ addMtFunction(async (...a) => {
 	console.log(...a)
 	return a[0]
 }, 'print')
-addMtFunction(async (...args) => args, 'list', 1)
+addMtFunction(async (...args) => args, 'list')
 addMtFunction(async (a, index, val) => {
 	try {
 		if (val !== undefined) a[index] = val
@@ -201,6 +199,8 @@ const shorthands = {
 	'?=': '@ while',
 	'#-': '@ length',
 	'|>': '@ print',
+	'[': '( list',
+	']': ')',
 	'#': '@ index',
 	'##': '@ slice',
 	'->': '@ execute'
@@ -394,7 +394,8 @@ window.onload = function () {
 	let threadPrograms = text.split('\n\n')
 	for (let threadProgram of threadPrograms) {
 		if (!threadProgram.trim()) continue
-		execute(threadProgram).then(console.log)
-		//.catch(e => console.error(`error: ${e}`))
+		execute(threadProgram)
+			.then(console.log)
+			.catch(e => console.error(`error: ${e}`))
 	}
 }
