@@ -1,3 +1,5 @@
+'use strict'
+
 // function modified from:
 // https://blog.stevenlevithan.com/archives/javascript-match-nested
 // use as: matchRecursive('a(b)c(d(e)f)g', '(', ')')
@@ -237,9 +239,24 @@ class CodeData {
  * @param {CodeData} data
  */
 function replaceBlocks(code) {
-	data = new CodeData(code)
-	let parentheses = matchRecursive(data.code, '\\(|<<|\\{', '\\)|>>|\\}')
+	let data = new CodeData(code)
+	let strings = matchRecursive(data.code, '<<', '>>')
 	let replaceOffset = 0
+	for (const [str, start, end, char] of strings) {
+		switch (char) {
+			case '>>':
+				data.code = `${data.code.substring(0, start + replaceOffset)}${
+					data.strings.length
+				}${data.code.substring(end + replaceOffset)}`
+				data.strings.push(str)
+				replaceOffset -=
+					str.length - data.strings.length.toString().length
+				break
+		}
+	}
+	data.code = resolveShorthands(data.code)
+	let parentheses = matchRecursive(data.code, '\\(|\\{', '\\)|\\}')
+	replaceOffset = 0
 	for (const [str, start, end, char] of parentheses) {
 		switch (char) {
 			case ')':
@@ -258,17 +275,8 @@ function replaceBlocks(code) {
 				replaceOffset -=
 					str.length - data.codeBlocks.length.toString().length
 				break
-			case '>>':
-				data.code = `${data.code.substring(0, start + replaceOffset)}${
-					data.strings.length
-				}${data.code.substring(end + replaceOffset)}`
-				data.strings.push(str)
-				replaceOffset -=
-					str.length - data.strings.length.toString().length
-				break
 		}
 	}
-	data.code = resolveShorthands(data.code)
 	return data
 }
 
@@ -278,11 +286,11 @@ function replaceBlocks(code) {
  * @param {{string:any}} variables
  */
 async function processCall(text, data, variables) {
+	let reset = text.includes(';')
 	let [func, ...args] = text
 		.replace(/(\s|^)[@;]\s/, '')
 		.trim()
 		.split(/(?<=[^\s])\s+/)
-	reset = text.includes(';')
 	if (func.startsWith('(')) {
 		let num = func.slice(1, -1)
 		func = await execute(data.innerScopes[num])
@@ -309,7 +317,7 @@ async function processCall(text, data, variables) {
 			func = f
 		} else {
 			if (args.length) throw `undefined function ${func}`
-			return [parseValue(func)]
+			return [false, parseValue(func), []]
 		}
 	}
 	for (const i in args) {
@@ -386,8 +394,7 @@ window.onload = function () {
 	let threadPrograms = text.split('\n\n')
 	for (let threadProgram of threadPrograms) {
 		if (!threadProgram.trim()) continue
-		execute(threadProgram)
-			.then(console.log)
-			.catch(e => console.error(`error: ${e}`))
+		execute(threadProgram).then(console.log)
+		//.catch(e => console.error(`error: ${e}`))
 	}
 }
