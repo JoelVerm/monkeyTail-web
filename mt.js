@@ -48,6 +48,7 @@ function parseValue(val) {
 }
 
 const functions = {}
+const funcLengths = {}
 function curry(fn, checkFn = null) {
 	function curried(argsIn = [], args = []) {
 		args = args.concat(argsIn)
@@ -64,6 +65,10 @@ function curry(fn, checkFn = null) {
 		return curried(argsIn)
 	}
 }
+const isBareValue = v =>
+	typeof v === 'number' ||
+	(typeof v === 'string' && v.length === 1) ||
+	typeof v === 'function'
 function applied(fn) {
 	return function apply(...args) {
 		for (const i in args) {
@@ -83,40 +88,8 @@ function applied(fn) {
  * @returns {Function}
  */
 function addMtFunction(fn, name) {
-	const argsDefs = fn
-		.toString()
-		.split('=>')[0]
-		.replace('(', '')
-		.replace(')', '')
-		.replace('async', '')
-		.split(',')
-		.map(e => e.trim())
-	const maxArgsLen = argsDefs[argsDefs.length - 1].startsWith('...')
-		? null
-		: argsDefs.length
-
-	functions[name] = curry(applied(fn), (newArgs, args) => {
-		if (maxArgsLen && args.length > maxArgsLen) {
-			throw `${name} expects less than ${maxArgsLen} arguments, got ${args.length}: ${args}`
-		}
-		const argPosOffset = args.length - newArgs.length
-		for (let i = 0; i < newArgs.length; i++) {
-			const argPos = i + argPosOffset
-			const index = Math.min(argPos, argsDefs.length - 1)
-			if (
-				argsDefs[index].endsWith('$') &&
-				!(typeof args[i] === 'function')
-			) {
-				throw `${name} expects argument [${argsDefs[index]
-					.replace('...', '')
-					.replace('_', '')
-					.replace('$', '')}] to be a ${
-					argsDefs[index].endsWith('$') ? 'function' : 'value'
-				}, got opposite: ${args[i]}`
-			}
-		}
-		return true
-	})
+	functions[name] = curry(applied(fn))
+	funcLengths[name] = functions.length
 }
 //#region functions
 addMtFunction(
@@ -155,11 +128,15 @@ addMtFunction(async (a, b$, c$) => {
 	return a
 }, 'while')
 addMtFunction(async a => a.length, 'length')
-addMtFunction(async (...a) => {
-	console.log(...a)
-	return a[0]
+addMtFunction(async a => {
+	console.log(a)
+	return a
 }, 'print')
-addMtFunction(async (...args) => args, 'list')
+addMtFunction(async () => [], 'list')
+addMtFunction(async (a, b) => {
+	console.log(a, b)
+	return [...a, b]
+}, 'append')
 addMtFunction(async (a, index, val) => {
 	try {
 		if (val !== undefined) a[index] = val
@@ -184,7 +161,6 @@ addMtFunction(
 		}, c),
 	'reduce'
 )
-addMtFunction(async (block$, ...input) => block$(...input), 'execute')
 //#endregion functions
 
 const shorthands = {
@@ -213,11 +189,11 @@ const shorthands = {
 	'?=': '@ while',
 	'#-': '@ length',
 	'|>': '@ print',
-	'[': '( list',
+	'[': '( list @ append',
+	',': '@ append',
 	']': ')',
 	'#': '@ index',
-	'##': '@ slice',
-	'->': '@ execute'
+	'##': '@ slice'
 }
 for (const key in shorthands) {
 	let newKey = key.replace(/[-[\]{}()*+?.\\^$|,]/g, '\\$&')
