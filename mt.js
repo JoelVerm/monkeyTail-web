@@ -38,22 +38,20 @@ function matchRecursive(str, opener, closer) {
 function parseValue(val) {
 	const n = Number(val)
 	if (!isNaN(n)) {
-		return n
+		return () => n
 	}
 	if (val.trim) {
-		if (val.trim() === '') return 0
-		return val
+		if (val.trim() === '') return () => 0
+		return () => val
 	}
-	return 0
+	return () => 0
 }
 
 const functions = {}
-const funcLengths = {}
-function curry(fn, checkFn = null) {
+function curry(fn, len) {
 	function curried(argsIn = [], args = []) {
 		args = args.concat(argsIn)
-		if (checkFn && !checkFn(argsIn, args)) return null
-		if (args.length >= fn.length) {
+		if (args.length >= len) {
 			return fn(...args)
 		} else {
 			return function (...argsIn) {
@@ -83,13 +81,37 @@ function applied(fn) {
 		return fn(...args)
 	}
 }
+var STRIP_COMMENTS = /((\/\/.*$)|(\/\*[\s\S]*?\*\/))/gm
+var ARGUMENT_NAMES = /([^\s,]+)/g
+function getParamNames(func) {
+	var fnStr = func.toString().replace(STRIP_COMMENTS, '')
+	var result = fnStr
+		.slice(fnStr.indexOf('(') + 1, fnStr.indexOf(')'))
+		.match(ARGUMENT_NAMES)
+	if (result === null) result = []
+	return result
+}
+const mtFn =
+	fn =>
+	async (...args) => {
+		let paramNames = getParamNames(fn)
+		console.log(paramNames, args)
+		return fn(
+			...(await Promise.all(
+				args.map(async (e, i) =>
+					paramNames[i].endsWith('$') ? e : await e()
+				)
+			))
+		)
+	}
 /**
  * @param {Function} fn
  * @returns {Function}
  */
 function addMtFunction(fn, name) {
-	functions[name] = curry(applied(fn))
-	funcLengths[name] = functions.length
+	functions[name] = curry(applied(mtFn(fn)), fn.length)
+	functions[name].len = fn.length
+	functions[name].fn = fn.name
 }
 //#region functions
 addMtFunction(
@@ -164,36 +186,36 @@ addMtFunction(
 //#endregion functions
 
 const shorthands = {
-	'+': '@ add',
-	'-': '@ subtract',
-	'*': '@ multiply',
-	'/': '@ divide',
-	'%': '@ modulo',
-	'^': '@ power',
-	'**': '@ power',
-	'v/': '@ sqrt',
-	'|.|': '@ abs',
-	'|v|': '@ floor',
-	'|^|': '@ ceil',
-	'|x|': '@ round',
-	'>': '@ greater',
-	'<': '@ less',
-	'>=': '@ greaterEqual',
-	'<=': '@ lessEqual',
-	'==': '@ equal',
-	'!=': '@ notEqual',
-	'&': '@ and',
-	'|': '@ or',
-	'!': '@ not',
-	'?': '@ if',
-	'?=': '@ while',
-	'#-': '@ length',
-	'|>': '@ print',
-	'[': '( list @ append',
-	',': '@ append',
+	'+': 'add',
+	'-': 'subtract',
+	'*': 'multiply',
+	'/': 'divide',
+	'%': 'modulo',
+	'^': 'power',
+	'**': 'power',
+	'v/': 'sqrt',
+	'|.|': 'abs',
+	'|v|': 'floor',
+	'|^|': 'ceil',
+	'|x|': 'round',
+	'>': 'greater',
+	'<': 'less',
+	'>=': 'greaterEqual',
+	'<=': 'lessEqual',
+	'==': 'equal',
+	'!=': 'notEqual',
+	'&': 'and',
+	'|': 'or',
+	'!': 'not',
+	'?': 'if',
+	'?=': 'while',
+	'#-': 'length',
+	'|>': 'print',
+	'[': '( list append',
+	',': 'append',
 	']': ')',
-	'#': '@ index',
-	'##': '@ slice'
+	'#': 'index',
+	'##': 'slice'
 }
 for (const key in shorthands) {
 	let newKey = key.replace(/[-[\]{}()*+?.\\^$|,]/g, '\\$&')
@@ -210,7 +232,8 @@ function resolveShorthands(code) {
 	}
 	return code
 }
-const removeComments = code => code.replace(/\/\/[^\n]*\n|\/\*(.|\n)*\*\//g, '')
+const removeComments = code =>
+	code.replace(/\/\/[^\n]*\n|\/\*(.|\n)*?\*\//g, '')
 
 class CodeData {
 	constructor(code) {
@@ -267,6 +290,7 @@ function replaceBlocks(code) {
 				break
 		}
 	}
+	data.code = data.code.trim()
 	return data
 }
 
@@ -275,65 +299,33 @@ function replaceBlocks(code) {
  * @param {CodeData} data
  * @param {{string:any}} variables
  */
-async function processCall(text, data, variables) {
-	let reset = text.includes(';')
-	let [func, ...args] = text
-		.replace(/(\s|^)[@;]\s/, '')
-		.trim()
-		.split(/(?<=[^\s])\s+/)
-	if (func.startsWith('(')) {
-		let num = func.slice(1, -1)
-		func = await execute(data.innerScopes[num])
-	} else if (func.startsWith('{')) {
-		let num = func.slice(1, -1)
-		func = await createComposition(data.codeBlocks[num])
-	} else if (func.startsWith('<<')) {
-		let num = func.slice(2, -2)
-		func = data.strings[num]
-	} else if (func.startsWith('$')) {
-		let f = variables[func.slice(1)]
-		if (f == null) throw `undefined variable ${func.slice(1)}`
-		func = f
-	} else if (func === 'var') {
-		let varName = args[0]
-		variables[varName] = { isVariable: true, varName, value: null }
-		func = (varName, value) => {
-			variables[varName].value = value
-			return value
+async function parseWord(word, data) {
+	if (word.startsWith('(')) {
+		let num = word.slice(1, -1)
+		return await execute(data.innerScopes[num])
+	} else if (word.startsWith('{')) {
+		let num = word.slice(1, -1)
+		return await createComposition(data.codeBlocks[num])
+	} else if (word.startsWith('<<')) {
+		let num = word.slice(2, -2)
+		return data.strings[num]
+	} else if (word.startsWith('$')) {
+		let f = variables[word.slice(1)]
+		if (f == null) throw `undefined variable ${word.slice(1)}`
+		return f
+	} else if (word === 'var') {
+		return (varName, value) => {
+			variables[varName] = { isVariable: true, varName, value }
+			return () => value
 		}
 	} else {
-		let f = functions[func]
+		let f = functions[word]
 		if (f) {
-			func = f
+			return f
 		} else {
-			if (args.length) throw `undefined function ${func}`
-			return [false, parseValue(func), []]
+			return parseValue(word)
 		}
 	}
-	for (const i in args) {
-		if (args[i].startsWith('(')) {
-			let num = args[i].slice(1, -1)
-			args[i] = await execute(data.innerScopes[num])
-		} else if (args[i].startsWith('{')) {
-			let num = args[i].slice(1, -1)
-			args[i] = await createComposition(data.codeBlocks[num])
-		} else if (args[i].startsWith('<<')) {
-			let num = args[i].slice(2, -2)
-			args[i] = data.strings[num]
-		} else if (args[i].startsWith('$')) {
-			let f = variables[args[i].slice(1)]
-			if (f == null) throw `undefined variable ${args[i].slice(1)}`
-			args[i] = f
-		} else {
-			let f = functions[args[i]]
-			if (f == null) {
-				args[i] = parseValue(args[i])
-			} else {
-				args[i] = f
-			}
-		}
-	}
-	return [reset, func, args]
 }
 
 async function createComposition(code) {
@@ -341,20 +333,36 @@ async function createComposition(code) {
 
 	const variables = {}
 
-	let compositions = data.code.matchAll(/(\s[@;]\s|^)(.|\n)*?(?=\s[@;]\s|$)/g)
+	let words = data.code.split(/\s+/g)
 	let callList = []
-	for (let app of compositions) {
-		app = app[0].trim()
-		callList.push(await processCall(app, data, variables))
+	let currentCall = []
+	let reset = false
+	for (let word of words) {
+		word = word.trim()
+		if (word === ';') {
+			reset = true
+			continue
+		}
+		word = await parseWord(word, data, variables)
+		if (reset) {
+			callList.push([word, []])
+			currentCall = []
+			reset = false
+			continue
+		}
+		if (!currentCall.length) {
+			currentCall.push(word, [])
+		} else {
+			currentCall[1].push(word)
+			if (currentCall[1].length >= currentCall[0].len - 1) {
+				callList.push(currentCall)
+				currentCall = []
+			}
+		}
 	}
 	return async inp => {
-		for (let [reset, func, args] of callList) {
-			if (reset) inp = null
-			if (typeof func !== 'function') {
-				inp = func
-				continue
-			}
-			if (inp != null) args = [inp, ...args]
+		for (let [func, args] of callList) {
+			if (inp != null) args = [() => inp, ...args]
 			inp = await func(
 				...args.map(v => {
 					if (v.isVariable === true && v.varName) {
@@ -384,8 +392,7 @@ window.onload = function () {
 	let threadPrograms = text.split('\n\n')
 	for (let threadProgram of threadPrograms) {
 		if (!threadProgram.trim()) continue
-		execute(threadProgram)
-			.then(console.log)
-			.catch(e => console.error(`error: ${e}`))
+		execute(';' + threadProgram).then(console.log)
+		//.catch(e => console.error(`error: ${e}`))
 	}
 }
