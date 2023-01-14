@@ -18,11 +18,11 @@
 						$> ptf -> 3
 			*/
 
-			3 ?= { < 8 }
-			    { + 2 }
+			/* 3 ?= { < 8 }
+			    { + 2 } */
 
-			         var foo { + 5 } ;
-			    [ 1 , 2 , 3 , 4 , 5 ] |> @ map $foo
+			         { + 5 } =$foo ;
+			    [ 1 , 2 , 3 , 4 , 5 ] |> map $foo
 		</script>
 		<script type="text/mt">
 			//HTMLget body @ print # 0 @ HTMLon mousedown { print 8 }

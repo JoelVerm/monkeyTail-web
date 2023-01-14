@@ -1,9 +1,11 @@
 'use strict'
 
-// function modified from:
-// https://blog.stevenlevithan.com/archives/javascript-match-nested
-// use as: matchRecursive('a(b)c(d(e)f)g', '(', ')')
-// returns: [['b', 2, 3, ')'], ['d(e)f', 6, 11, ')']]
+/*
+|  function modified from:
+|  https://blog.stevenlevithan.com/archives/javascript-match-nested
+|  use as: matchRecursive('a(b)c(d(e)f)g', '(', ')')
+|  returns: [['b', 2, 3, ')'], ['d(e)f', 6, 11, ')']]
+*/
 
 function matchRecursive(str, opener, closer) {
 	let openRE = new RegExp(`${opener}`),
@@ -36,13 +38,14 @@ function matchRecursive(str, opener, closer) {
 }
 
 function parseValue(val) {
-	const n = Number(val)
-	if (!isNaN(n)) {
-		return () => n
+	const num = Number(val)
+	if (!isNaN(num)) {
+		return () => num
 	}
 	if (val.trim) {
 		if (val.trim() === '') return () => 0
-		return () => val
+		const str = val
+		return () => str
 	}
 	return () => 0
 }
@@ -81,13 +84,11 @@ function applied(fn) {
 		return fn(...args)
 	}
 }
-var STRIP_COMMENTS = /((\/\/.*$)|(\/\*[\s\S]*?\*\/))/gm
-var ARGUMENT_NAMES = /([^\s,]+)/g
 function getParamNames(func) {
-	var fnStr = func.toString().replace(STRIP_COMMENTS, '')
+	var fnStr = func.toString().replace(/((\/\/.*$)|(\/\*[\s\S]*?\*\/))/gm, '')
 	var result = fnStr
 		.slice(fnStr.indexOf('(') + 1, fnStr.indexOf(')'))
-		.match(ARGUMENT_NAMES)
+		.match(/([^\s,]+)/g)
 	if (result === null) result = []
 	return result
 }
@@ -95,7 +96,6 @@ const mtFn =
 	fn =>
 	async (...args) => {
 		let paramNames = getParamNames(fn)
-		console.log(paramNames, args)
 		return fn(
 			...(await Promise.all(
 				args.map(async (e, i) =>
@@ -111,7 +111,7 @@ const mtFn =
 function addMtFunction(fn, name) {
 	functions[name] = curry(applied(mtFn(fn)), fn.length)
 	functions[name].len = fn.length
-	functions[name].fn = fn.name
+	functions[name].fn = name
 }
 //#region functions
 addMtFunction(
@@ -155,10 +155,7 @@ addMtFunction(async a => {
 	return a
 }, 'print')
 addMtFunction(async () => [], 'list')
-addMtFunction(async (a, b) => {
-	console.log(a, b)
-	return [...a, b]
-}, 'append')
+addMtFunction(async (a, b) => [...a, b], 'append')
 addMtFunction(async (a, index, val) => {
 	try {
 		if (val !== undefined) a[index] = val
@@ -211,7 +208,7 @@ const shorthands = {
 	'?=': 'while',
 	'#-': 'length',
 	'|>': 'print',
-	'[': '( list append',
+	'[': '( ; list append',
 	',': 'append',
 	']': ')',
 	'#': 'index',
@@ -299,10 +296,11 @@ function replaceBlocks(code) {
  * @param {CodeData} data
  * @param {{string:any}} variables
  */
-async function parseWord(word, data) {
+async function parseWord(word, data, variables) {
 	if (word.startsWith('(')) {
 		let num = word.slice(1, -1)
-		return await execute(data.innerScopes[num])
+		let fooTest = await execute(data.innerScopes[num])
+		return () => fooTest
 	} else if (word.startsWith('{')) {
 		let num = word.slice(1, -1)
 		return await createComposition(data.codeBlocks[num])
@@ -312,12 +310,16 @@ async function parseWord(word, data) {
 	} else if (word.startsWith('$')) {
 		let f = variables[word.slice(1)]
 		if (f == null) throw `undefined variable ${word.slice(1)}`
-		return f
-	} else if (word === 'var') {
-		return (varName, value) => {
-			variables[varName] = { isVariable: true, varName, value }
+		return () => f.value
+	} else if (word.startsWith('=$')) {
+		let varName = word.slice(2)
+		variables[varName] = { isVariable: true, varName, value: null }
+		function varFn(value) {
+			variables[varName].value = value
 			return () => value
 		}
+		varFn.len = 1
+		return varFn
 	} else {
 		let f = functions[word]
 		if (f) {
@@ -343,25 +345,28 @@ async function createComposition(code) {
 			reset = true
 			continue
 		}
-		word = await parseWord(word, data, variables)
+		const parsedWord = await parseWord(word, data, variables)
 		if (reset) {
-			callList.push([word, []])
+			callList.push([parsedWord, [], [word]])
 			currentCall = []
 			reset = false
 			continue
 		}
 		if (!currentCall.length) {
-			currentCall.push(word, [])
+			currentCall.push(parsedWord, [], [word])
 		} else {
-			currentCall[1].push(word)
-			if (currentCall[1].length >= currentCall[0].len - 1) {
-				callList.push(currentCall)
-				currentCall = []
+			if (currentCall[1].length < currentCall[0].len - 1) {
+				currentCall[1].push(parsedWord)
+				currentCall[2].push(word)
 			}
+		}
+		if (currentCall[1].length >= currentCall[0].len - 1) {
+			callList.push(currentCall)
+			currentCall = []
 		}
 	}
 	return async inp => {
-		for (let [func, args] of callList) {
+		for (let [func, args, words] of callList) {
 			if (inp != null) args = [() => inp, ...args]
 			inp = await func(
 				...args.map(v => {
@@ -392,7 +397,8 @@ window.onload = function () {
 	let threadPrograms = text.split('\n\n')
 	for (let threadProgram of threadPrograms) {
 		if (!threadProgram.trim()) continue
-		execute(';' + threadProgram).then(console.log)
-		//.catch(e => console.error(`error: ${e}`))
+		execute(';' + threadProgram)
+			.then(console.log)
+			.catch(e => console.error(`error: ${e}`))
 	}
 }
