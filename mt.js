@@ -108,8 +108,9 @@ const mtFn =
  * @param {Function} fn
  * @returns {Function}
  */
-function addMtFunction(fn, name) {
-	functions[name] = curry(applied(mtFn(fn)), fn.length)
+function addMtFunction(fn, name, apply = true) {
+	if (apply) functions[name] = curry(applied(mtFn(fn)), fn.length)
+	else functions[name] = curry(mtFn(fn), fn.length)
 	functions[name].len = fn.length
 	functions[name].fn = name
 }
@@ -156,20 +157,24 @@ addMtFunction(async a => {
 }, 'print')
 addMtFunction(async () => [], 'list')
 addMtFunction(async (a, b) => [...a, b], 'append')
-addMtFunction(async (a, index, val) => {
-	try {
-		if (val !== undefined) a[index] = val
-		return a[index]
-	} catch {
-		if (getType(a) === 'list' || getType(a) === 'string')
-			throw `index ${index} out of range`
-		else if (getType(a) === 'map') throw `index ${index} not in map`
-		else throw `Can not get index of ${getType(a)}`
-	}
-}, 'index')
-addMtFunction(async (a, start, end) => a.slice(start, end), 'slice')
-addMtFunction(async (a, b$) => await Promise.all(a.map(b$)), 'map')
-addMtFunction(async (a, b$) => a.filter(b$), 'filter')
+addMtFunction(
+	async (a, index, val) => {
+		try {
+			if (val !== '_') a[index] = val
+			return a[index]
+		} catch {
+			if (getType(a) === 'list' || getType(a) === 'string')
+				throw `index ${index} out of range`
+			else if (getType(a) === 'map') throw `index ${index} not in map`
+			else throw `Can not get index of ${getType(a)}`
+		}
+	},
+	'index',
+	false
+)
+addMtFunction(async (a, start, end) => a.slice(start, end), 'slice', false)
+addMtFunction(async (a, b$) => await Promise.all(a.map(b$)), 'map', false)
+addMtFunction(async (a, b$) => a.filter(b$), 'filter', false)
 addMtFunction(
 	async (a, b$, c) =>
 		a.reduce((last, current) => {
@@ -178,7 +183,8 @@ addMtFunction(
 			else last += result
 			return last
 		}, c),
-	'reduce'
+	'reduce',
+	false
 )
 //#endregion functions
 
@@ -310,7 +316,7 @@ async function parseWord(word, data, variables) {
 	} else if (word.startsWith('$')) {
 		let f = variables[word.slice(1)]
 		if (f == null) throw `undefined variable ${word.slice(1)}`
-		return () => f.value
+		return f
 	} else if (word.startsWith('=$')) {
 		let varName = word.slice(2)
 		variables[varName] = { isVariable: true, varName, value: null }
